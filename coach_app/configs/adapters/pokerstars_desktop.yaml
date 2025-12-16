@@ -1,0 +1,15 @@
+adapter: pokerstars_desktop
+description: "Placeholder ROI/anchors for PokerStars desktop."
+
+rois:
+  pot: { x: 120, y: 55, w: 220, h: 70 }
+  hero_cards: { x: 290, y: 710, w: 260, h: 95 }
+  board: { x: 240, y: 310, w: 560, h: 120 }
+  stacks:
+    seat1: { x: 320, y: 650, w: 160, h: 40 }
+
+anchors:
+  table_center: { x: 512, y: 384 }
+  dealer_button: { x: 600, y: 420 }
+
+

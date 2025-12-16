@@ -1,0 +1,44 @@
+[project]
+name = "ai-poker-blackjack-coach"
+version = "0.1.0"
+description = "Production-ready scaffold for an AI Poker + Blackjack Coach (deterministic engine + no-hallucination explanations)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Your Team" }]
+dependencies = [
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "pyyaml>=6.0.1",
+  "python-multipart>=0.0.9",
+  "pillow>=10.4.0",
+  "numpy>=2.0.0",
+]
+
+[project.optional-dependencies]
+telegram = [
+  "python-telegram-bot>=21.4",
+]
+dev = [
+  "pytest>=8.2.0",
+  "httpx>=0.27.0",
+  "ruff>=0.6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["coach_app/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+

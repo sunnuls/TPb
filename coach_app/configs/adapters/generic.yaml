@@ -1,0 +1,14 @@
+adapter: generic
+description: "Generic stub adapter config (пример)."
+
+rois:
+  # ROI coordinates in pixels: x, y, w, h
+  pot: { x: 100, y: 50, w: 200, h: 60 }
+  hero_cards: { x: 300, y: 700, w: 240, h: 90 }
+  board: { x: 260, y: 300, w: 500, h: 110 }
+
+anchors:
+  table_center: { x: 400, y: 400 }
+  dealer_button: { x: 520, y: 420 }
+
+

@@ -1,0 +1,13 @@
+adapter: gg_mobile
+description: "Placeholder ROI/anchors for GGPoker mobile."
+
+rois:
+  pot: { x: 80, y: 40, w: 200, h: 55 }
+  hero_cards: { x: 220, y: 820, w: 320, h: 110 }
+  board: { x: 160, y: 360, w: 640, h: 140 }
+
+anchors:
+  table_center: { x: 540, y: 480 }
+  dealer_button: { x: 650, y: 520 }
+
+
