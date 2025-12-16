@@ -61,7 +61,16 @@ Response (shape):
       "notes": ["Monte Carlo 20k samples", "Preflop chart placeholder"]
     }
   },
-  "explanation": "…strictly derived from key_facts…"
+  "explanation": "…строго из key_facts + валидированного состояния…",
+  "parse_report": {
+    "parser": "PokerStarsHandHistoryParser",
+    "room": "pokerstars",
+    "game_type_detected": "NLHE_6max_cash",
+    "confidence": 0.9,
+    "missing_fields": [],
+    "warnings": [],
+    "parsed": { "hero_hand": ["Ah","Ks"], "board": ["Ad","7c","2s"], "to_call": 0.0 }
+  }
 }
 ```
 
@@ -111,3 +120,23 @@ Example configs live in `coach_app/configs/adapters/` and define:
 - Adapter type + metadata
 
 The vision layer is stubbed (plugin interface + placeholder adapter) so you can integrate OCR / card recognition later.
+
+### Dev ergonomics
+
+- **Tests**:
+
+```bash
+pytest
+```
+
+- **API**:
+
+```bash
+uvicorn coach_app.api.main:app --reload --port 8000
+```
+
+- **Lint** (optional):
+
+```bash
+ruff check .
+```

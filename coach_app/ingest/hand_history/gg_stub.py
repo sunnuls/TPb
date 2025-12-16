@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from coach_app.ingest.hand_history.base import HandHistoryParser
+from coach_app.schemas.ingest import ParseReport
 from coach_app.schemas.common import Street
 from coach_app.schemas.poker import PlayerSeat, PokerGameState, PokerGameType
 
@@ -13,8 +14,8 @@ class GGStubParser(HandHistoryParser):
 
     room = "gg"
 
-    def parse(self, hand_history_text: str) -> PokerGameState:
-        return PokerGameState(
+    def parse(self, hand_history_text: str) -> tuple[PokerGameState, ParseReport]:
+        state = PokerGameState(
             game_type=PokerGameType.NLHE_6MAX_CASH,
             street=Street.PREFLOP,
             players=[
@@ -31,5 +32,15 @@ class GGStubParser(HandHistoryParser):
             last_aggressive_action="none",
             confidence={"value": 0.2, "source": "hand_history", "notes": ["Stub parser: incomplete state"]},
         )
+        report = ParseReport(
+            parser="GGStubParser",
+            room="gg",
+            game_type_detected="unknown",
+            confidence=0.2,
+            missing_fields=["hero_hole", "actions"],
+            warnings=["Stub parser used"],
+            parsed={"street": state.street.value},
+        )
+        return state, report
 
 

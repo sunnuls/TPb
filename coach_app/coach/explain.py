@@ -47,6 +47,20 @@ def explain_from_key_facts(
         lines.append(f"Рекомендация: **{act}**{size_txt}.")
         lines.append(f"Уверенность: {confidence:.2f}.")
 
+        # Show only validated / computed facts if present
+        if "street" in key_facts and key_facts.get("street") is not None:
+            lines.append(f"- Street: {key_facts['street']}")
+        if "hero_hand" in key_facts and key_facts.get("hero_hand"):
+            lines.append(f"- Hero: {key_facts['hero_hand']}")
+        if "board" in key_facts and key_facts.get("board"):
+            lines.append(f"- Board: {key_facts['board']}")
+        if "pot" in key_facts and key_facts.get("pot") is not None:
+            lines.append(f"- Pot: {key_facts['pot']}")
+        if "to_call" in key_facts and key_facts.get("to_call") is not None:
+            lines.append(f"- To call: {key_facts['to_call']}")
+        if "hand_category" in key_facts and key_facts.get("hand_category"):
+            lines.append(f"- Категория руки: {key_facts['hand_category']}")
+
         if equity is not None:
             lines.append(f"- Equity (оценка): {_fmt_pct(equity)}")
         if pot_odds is not None:
