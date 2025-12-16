@@ -31,12 +31,21 @@ def test_analyze_poker_endpoint_returns_decision_explanation_and_parse_report():
     # Required key_facts fields for this iteration
     for k in (
         "street",
+        "game_type",
+        "effective_stack_bb",
+        "stack_bucket",
+        "stack_class",
         "pot",
         "to_call",
         "pot_odds",
         "hero_hand",
         "board",
         "hand_category",
+        "hero_range_name",
+        "opponent_range_name",
+        "range_intersection_note",
+        "range_position",
+        "plan_hint",
         "range_summary",
         "combos_summary",
         "notes",
@@ -48,6 +57,12 @@ def test_analyze_poker_endpoint_returns_decision_explanation_and_parse_report():
     mentioned_cards = _extract_card_tokens(data["explanation"])
     allowed_cards = set(key_facts.get("hero_hand", [])) | set(key_facts.get("board", []))
     assert mentioned_cards.issubset(allowed_cards)
+
+    # Explanation should mention range names when present
+    if key_facts.get("hero_range_name"):
+        assert str(key_facts["hero_range_name"]) in data["explanation"]
+    if key_facts.get("opponent_range_name"):
+        assert str(key_facts["opponent_range_name"]) in data["explanation"]
 
 
 def test_when_pot_odds_unknown_explanation_does_not_mention_it():

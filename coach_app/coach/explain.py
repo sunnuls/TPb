@@ -47,39 +47,63 @@ def explain_from_key_facts(
         lines.append(f"Рекомендация: **{act}**{size_txt}.")
         lines.append(f"Уверенность: {confidence:.2f}.")
 
-        # Show only validated / computed facts if present
-        if "street" in key_facts and key_facts.get("street") is not None:
-            lines.append(f"- Street: {key_facts['street']}")
-        if "hero_hand" in key_facts and key_facts.get("hero_hand"):
-            lines.append(f"- Hero: {key_facts['hero_hand']}")
-        if "board" in key_facts and key_facts.get("board"):
-            lines.append(f"- Board: {key_facts['board']}")
-        if "pot" in key_facts and key_facts.get("pot") is not None:
-            lines.append(f"- Pot: {key_facts['pot']}")
-        if "to_call" in key_facts and key_facts.get("to_call") is not None:
-            lines.append(f"- To call: {key_facts['to_call']}")
-        if "hand_category" in key_facts and key_facts.get("hand_category"):
-            lines.append(f"- Категория руки: {key_facts['hand_category']}")
+        # 1) Situation summary
+        lines.append("")
+        lines.append("1) Ситуация")
+        for k, label in (
+            ("game_type", "Формат"),
+            ("street", "Улица"),
+            ("effective_stack_bb", "Effective stack (bb)"),
+            ("stack_bucket", "Stack bucket"),
+            ("stack_class", "Stack class"),
+            ("hero_hand", "Рука героя"),
+            ("board", "Борд"),
+            ("pot", "Банк"),
+            ("to_call", "К коллу"),
+            ("pot_odds", "Pot odds"),
+            ("hand_category", "Категория"),
+        ):
+            if k not in key_facts:
+                continue
+            v = key_facts.get(k)
+            if v is None or v == []:
+                continue
+            if k == "pot_odds":
+                v = _fmt_pct(v)
+            lines.append(f"- {label}: {v}")
 
+        # 2) Range vs range
+        lines.append("")
+        lines.append("2) Диапазоны (Range Model v0)")
+        if key_facts.get("hero_range_name") is not None:
+            lines.append(f"- Диапазон героя: {key_facts.get('hero_range_name')}")
+        if key_facts.get("opponent_range_name") is not None:
+            lines.append(f"- Диапазон оппонента: {key_facts.get('opponent_range_name')}")
+        if key_facts.get("range_intersection_note"):
+            lines.append(f"- Примечание: {key_facts.get('range_intersection_note')}")
+        if range_summary:
+            lines.append(f"- Кратко: {range_summary}")
+
+        # 3) Why action fits range position
+        lines.append("")
+        lines.append("3) Почему это действие подходит")
+        if key_facts.get("range_position"):
+            lines.append(f"- Позиция руки в диапазоне: {key_facts.get('range_position')}")
+        if combos_summary:
+            lines.append(f"- Основание по структуре рук/дро: {combos_summary}")
         if equity is not None:
             lines.append(f"- Equity (оценка): {_fmt_pct(equity)}")
-        if pot_odds is not None:
-            lines.append(f"- Pot odds (цена колла): {_fmt_pct(pot_odds)}")
-        if range_summary:
-            lines.append(f"- Диапазоны (кратко): {range_summary}")
-        if combos_summary:
-            lines.append(f"- Комбы/категории: {combos_summary}")
-        if notes:
-            if isinstance(notes, list):
-                lines.append(f"- Примечания: " + "; ".join(map(str, notes)))
-            else:
-                lines.append(f"- Примечания: {notes}")
 
-        if len(lines) <= 2:
-            lines.append(
-                "Недостаточно вычисленных фактов для подробного ревью. "
-                "Добавьте стрит/борд/размеры ставок или используйте парсер HH."
-            )
+        # 4) Next-street plan
+        lines.append("")
+        lines.append("4) План на следующую улицу")
+        if key_facts.get("plan_hint"):
+            lines.append(f"- Идея: {key_facts.get('plan_hint')}")
+        if notes:
+            if isinstance(notes, list) and notes:
+                lines.append("- Заметки: " + "; ".join(map(str, notes)))
+            elif isinstance(notes, str):
+                lines.append(f"- Заметки: {notes}")
 
     elif domain == "blackjack":
         lines.append(f"Рекомендация: **{decision_action}**.")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from coach_app.engine.poker.preflop import hole_cards_to_notation, recommend_preflop
 from coach_app.engine.poker.postflop import recommend_postflop
+from coach_app.engine.poker.stack import StackInfo, classify_stack, compute_effective_stack_bb, stack_bucket
 from coach_app.schemas.common import Street
 from coach_app.schemas.ingest import ParseReport
 from coach_app.schemas.poker import PokerDecision, PokerGameState
@@ -17,6 +18,17 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
     """
     hero = next((p for p in state.players if p.is_hero), None)
     hero_pos = hero.position if hero else None
+    hero_stack = hero.stack if hero else None
+    opp_stacks = [p.stack for p in state.players if not p.is_hero]
+
+    game_family = "mtt" if state.game_type.value == "NLHE_MTT" else "cash"
+    eff_bb = compute_effective_stack_bb(hero_stack=hero_stack, opp_stacks=opp_stacks, bb=state.big_blind)
+    bucket = stack_bucket(game_family, eff_bb)
+    sclass = classify_stack(eff_bb)
+    stack_notes: list[str] = []
+    if eff_bb is None:
+        stack_notes.append("Не удалось вычислить effective_stack_bb (не хватает stack/bb).")
+    stack_info = StackInfo(effective_stack_bb=eff_bb, stack_class=sclass, bucket=bucket, notes=stack_notes)
 
     hero_hand_notation: str | None = None
     if len(state.hero_hole) == 2:
@@ -36,15 +48,24 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
 
     key_facts: dict = {
         "street": state.street.value,
+        "game_type": game_family,
+        "effective_stack_bb": stack_info.effective_stack_bb,
+        "stack_bucket": stack_info.bucket,
+        "stack_class": stack_info.stack_class,
         "pot": pot_val,
         "to_call": to_call_val,
         "pot_odds": None,
         "hero_hand": [str(c) for c in state.hero_hole],
         "board": [str(c) for c in state.board],
         "hand_category": None,
+        "hero_range_name": None,
+        "opponent_range_name": None,
+        "range_intersection_note": None,
+        "range_position": None,
+        "plan_hint": None,
         "range_summary": "Диапазоны оппонента: placeholder (MVP без трекинга линий/популяции).",
         "combos_summary": "Комбы: placeholder (MVP, упрощённые категории рук/дро).",
-        "notes": [],
+        "notes": list(stack_info.notes),
     }
 
     if state.street == Street.PREFLOP:
@@ -53,9 +74,21 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
             hero_pos=hero_pos,
             has_aggression=has_aggr,
             game_type=state.game_type.value,
+            stack_bucket=stack_info.bucket,
+            effective_stack_bb=stack_info.effective_stack_bb,
         )
         key_facts["hand_category"] = "preflop"
         key_facts["notes"] = list(plan.notes)
+        key_facts["hero_range_name"] = plan.hero_range_name
+        key_facts["opponent_range_name"] = plan.opp_range_name
+        key_facts["range_intersection_note"] = plan.range_intersection_note
+        key_facts["range_position"] = plan.range_position
+        key_facts["plan_hint"] = plan.plan_hint
+        if plan.range_summary:
+            key_facts["range_summary"] = plan.range_summary
+        # preflop combos summary: derived from range position + action
+        if plan.range_position:
+            key_facts["combos_summary"] = f"Префлоп: позиция руки в диапазоне = {plan.range_position}."
         conf = min(plan.confidence, float(report.confidence))
         return PokerDecision(action=plan.action, sizing=plan.sizing_bb, confidence=conf, key_facts=key_facts)
 
@@ -66,6 +99,8 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
         board=state.board,
         pot=pot_val,
         to_call=to_call_val,
+        stack_bucket=stack_info.bucket,
+        game_type=game_family,
     )
     key_facts["hand_category"] = plan.hand_category.category
     key_facts["pot_odds"] = plan.facts.get("pot_odds")
@@ -75,6 +110,13 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
     key_facts["flush_draw"] = plan.hand_category.is_flush_draw
     key_facts["straight_draw"] = plan.hand_category.is_straight_draw
     key_facts["notes"] = list(plan.notes)
+    key_facts["range_position"] = plan.facts.get("range_position")
+    key_facts["plan_hint"] = plan.facts.get("plan_hint")
+    key_facts["hero_range_name"] = plan.facts.get("hero_range_name")
+    key_facts["opponent_range_name"] = plan.facts.get("opponent_range_name")
+    key_facts["range_intersection_note"] = plan.facts.get("range_intersection_note")
+    if plan.facts.get("range_summary"):
+        key_facts["range_summary"] = plan.facts["range_summary"]
     # combos summary derived strictly from computed category/draw flags
     draw_bits: list[str] = []
     if plan.hand_category.is_flush_draw:
