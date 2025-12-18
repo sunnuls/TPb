@@ -27,6 +27,7 @@ class AppSettings(BaseSettings):
 
     # Vision adapters directory
     adapters_dir: Path = Field(default=Path("coach_app/configs/adapters"))
+    vision_adapters_dir: Path = Field(default=Path("coach_app/configs/vision_adapters"))
 
     # Telegram
     telegram_bot_token: str | None = None

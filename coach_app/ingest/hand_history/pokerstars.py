@@ -97,9 +97,10 @@ class PokerStarsHandHistoryParser:
         sb = bb = ante = 0.0
         total_pot_line: float | None = None
 
-        # Action parsing: we compute pot/to_call at hero's first decision on the latest street where hero acts.
+        # Action parsing: we compute pot/to_call at hero's decision point on the latest street where hero acts.
         street = Street.PREFLOP
         actions: list[_ActionEvent] = []
+        total_pot_line: float | None = None
 
         for raw in hand_history_text.splitlines():
             line = raw.strip()
@@ -204,6 +205,14 @@ class PokerStarsHandHistoryParser:
                 )
                 continue
 
+            m = _RE_TOTAL_POT.match(line)
+            if m:
+                try:
+                    total_pot_line = float(m.group("amt"))
+                except Exception:
+                    total_pot_line = None
+                continue
+
         if not players:
             missing.append("players")
         if hero_name is None:
@@ -231,7 +240,7 @@ class PokerStarsHandHistoryParser:
 
         _assign_positions(players, button_seat)
 
-        # Compute pot and to_call at hero's first action on the latest street where hero acts.
+        # Compute pot and to_call at hero's decision point on the latest street where hero acts.
         pot_at_hero: float | None = None
         to_call_at_hero: float | None = None
         decision_street: Street = Street.PREFLOP
@@ -274,6 +283,9 @@ class PokerStarsHandHistoryParser:
             confidence={"value": conf, "source": "hand_history", "notes": warnings},
         )
 
+        # Mark folded players as out of hand up to decision street (best-effort)
+        _apply_folds_to_players(players, actions, up_to_street=decision_street)
+
         report = ParseReport(
             parser="PokerStarsHandHistoryParser",
             room="pokerstars",
@@ -290,6 +302,16 @@ class PokerStarsHandHistoryParser:
                 "total_pot": total_pot_line,
                 "to_call": to_call_at_hero,
                 "button_seat": button_seat,
+                "action_history": [
+                    {
+                        "street": a.street.value,
+                        "actor": a.actor,
+                        "kind": a.kind,
+                        "amount": a.amount,
+                        "to_amount": a.to_amount,
+                    }
+                    for a in actions
+                ],
             },
         )
         return state, report
@@ -308,14 +330,23 @@ def _compute_pot_and_to_call(
 ) -> tuple[float | None, float | None, Street]:
     """
     Walk actions and compute:
-    - pot size (sum of contributions) right before hero's first action on the latest street where hero acts
+    - pot size (sum of contributions) right before hero's decision action
     - to_call at that moment
+
+    We choose hero's decision action as the *last* action hero takes on the latest street
+    where hero acts (deterministic, matches later-street decisions like turn call, check-raise, etc.).
     """
     # Identify the latest street where hero appears.
     hero_streets = [
         a.street for a in actions if a.actor == hero_name and a.kind in ("fold", "check", "call", "bet", "raise")
     ]
     decision_street = hero_streets[-1] if hero_streets else fallback_street
+
+    # Find the index of hero's decision action on decision_street (last occurrence).
+    decision_idx: int | None = None
+    for i, a in enumerate(actions):
+        if a.street == decision_street and a.actor == hero_name and a.kind in ("fold", "check", "call", "bet", "raise"):
+            decision_idx = i
 
     invested: dict[str, float] = {}
     current_bet = 0.0
@@ -329,13 +360,13 @@ def _compute_pot_and_to_call(
 
     reset_street()
 
-    for a in actions:
+    for i, a in enumerate(actions):
         if a.street != street:
             street = a.street
             reset_street()
 
-        # If this is hero's first action on decision_street, snapshot before applying.
-        if a.street == decision_street and a.actor == hero_name and a.kind in ("fold", "check", "call", "bet", "raise"):
+        # If this is hero's decision action on decision_street, snapshot before applying.
+        if decision_idx is not None and i == decision_idx:
             to_call = max(0.0, current_bet - invested.get(hero_name, 0.0))
             return pot, to_call, decision_street
 
@@ -387,5 +418,25 @@ def _compute_pot_and_to_call(
 
     # If hero never acted, return pot and unknown to_call at fallback street.
     return pot if pot > 0 else None, None, decision_street
+
+
+def _apply_folds_to_players(players: list[PlayerSeat], actions: list[_ActionEvent], *, up_to_street: Street) -> None:
+    """
+    Best-effort: mark players as out-of-hand if they folded before or on the decision street.
+    This improves IP/OOP inference for postflop logic.
+    """
+    name_to_player = {p.name: p for p in players if p.name}
+    folded: set[str] = set()
+    street_order = {Street.PREFLOP: 0, Street.FLOP: 1, Street.TURN: 2, Street.RIVER: 3}
+    cutoff = street_order.get(up_to_street, 3)
+    for a in actions:
+        if street_order.get(a.street, 99) > cutoff:
+            continue
+        if a.kind == "fold":
+            folded.add(a.actor)
+    for name in folded:
+        p = name_to_player.get(name)
+        if p is not None:
+            p.in_hand = False
 
 

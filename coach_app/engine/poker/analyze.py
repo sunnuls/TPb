@@ -57,6 +57,21 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
         "pot_odds": None,
         "hero_hand": [str(c) for c in state.hero_hole],
         "board": [str(c) for c in state.board],
+        "board_texture": None,
+        "preflop_aggressor": None,
+        "in_position": None,
+        "street_initiative": None,
+        "flop_checked_through": None,
+        "previous_street_summary": None,
+        "runout_change": None,
+        "selected_line": None,
+        "sizing_category": None,
+        "pot_fraction": None,
+        "recommended_bet_amount": None,
+        "recommended_raise_to": None,
+        "rounding_step": None,
+        "line_reason": None,
+        "street_plan": None,
         "hand_category": None,
         "hero_range_name": None,
         "opponent_range_name": None,
@@ -93,6 +108,15 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
         return PokerDecision(action=plan.action, sizing=plan.sizing_bb, confidence=conf, key_facts=key_facts)
 
     # Postflop
+    action_history = report.parsed.get("action_history")
+    if not isinstance(action_history, list):
+        action_history = None
+    hero_name = None
+    if hero and hero.name:
+        hero_name = hero.name
+    elif isinstance(report.parsed.get("hero_name"), str):
+        hero_name = report.parsed.get("hero_name")
+
     plan = recommend_postflop(
         street=state.street.value,
         hero_hole=state.hero_hole,
@@ -100,7 +124,10 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
         pot=pot_val,
         to_call=to_call_val,
         stack_bucket=stack_info.bucket,
+        stack_class=stack_info.stack_class,
         game_type=game_family,
+        action_history=action_history,
+        hero_name=hero_name,
     )
     key_facts["hand_category"] = plan.hand_category.category
     key_facts["pot_odds"] = plan.facts.get("pot_odds")
@@ -115,6 +142,21 @@ def analyze_poker_state(state: PokerGameState, report: ParseReport) -> PokerDeci
     key_facts["hero_range_name"] = plan.facts.get("hero_range_name")
     key_facts["opponent_range_name"] = plan.facts.get("opponent_range_name")
     key_facts["range_intersection_note"] = plan.facts.get("range_intersection_note")
+    key_facts["board_texture"] = plan.facts.get("board_texture")
+    key_facts["preflop_aggressor"] = plan.facts.get("preflop_aggressor")
+    key_facts["in_position"] = plan.facts.get("in_position")
+    key_facts["street_initiative"] = plan.facts.get("street_initiative")
+    key_facts["flop_checked_through"] = plan.facts.get("flop_checked_through")
+    key_facts["previous_street_summary"] = plan.facts.get("previous_street_summary")
+    key_facts["runout_change"] = plan.facts.get("runout_change")
+    key_facts["selected_line"] = plan.facts.get("selected_line")
+    key_facts["sizing_category"] = plan.facts.get("sizing_category")
+    key_facts["pot_fraction"] = plan.facts.get("pot_fraction")
+    key_facts["recommended_bet_amount"] = plan.facts.get("recommended_bet_amount")
+    key_facts["recommended_raise_to"] = plan.facts.get("recommended_raise_to")
+    key_facts["rounding_step"] = plan.facts.get("rounding_step")
+    key_facts["line_reason"] = plan.facts.get("line_reason")
+    key_facts["street_plan"] = plan.facts.get("street_plan")
     if plan.facts.get("range_summary"):
         key_facts["range_summary"] = plan.facts["range_summary"]
     # combos summary derived strictly from computed category/draw flags

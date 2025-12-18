@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+
+from PIL import Image
+from pydantic import BaseModel, Field
+
+
+class VisionParseResult(BaseModel):
+    partial_state: dict[str, Any] = Field(default_factory=dict)
+    confidence_map: dict[str, float] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    adapter_name: str
+    adapter_version: str
 
 
 class VisionAdapter(ABC):
@@ -12,12 +22,12 @@ class VisionAdapter(ABC):
     """
 
     adapter_name: str
+    adapter_version: str
 
     @abstractmethod
-    def analyze_frame(self, image_path: Path, *, adapter_config: Mapping[str, Any]) -> dict[str, Any]:
-        """
-        Return a JSON-serializable dict representing partial state + confidence.
-        Must NOT invent: return unknown fields as absent.
-        """
+    def parse(self, image: bytes | Image.Image) -> VisionParseResult:
+        """Parse screenshot/frame into PARTIAL state + confidence (never invent missing facts)."""
+
+
 
 

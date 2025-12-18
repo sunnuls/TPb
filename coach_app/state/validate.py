@@ -102,7 +102,70 @@ def validate_blackjack_state(state: BlackjackState) -> None:
             )
         )
 
+    if not isinstance(state.player_hand, list) or len(state.player_hand) < 2:
+        errors.append(
+            ValidationErrorDetail(
+                code="player_hand_invalid",
+                message="player_hand должен быть списком из >=2 карт",
+                path="player_hand",
+            )
+        )
+    else:
+        for i, c in enumerate(state.player_hand):
+            if not isinstance(c, str) or len(c) != 2:
+                errors.append(
+                    ValidationErrorDetail(
+                        code="card_token_invalid",
+                        message="карта должна быть токеном вида 'Ah' (2 символа)",
+                        path=f"player_hand[{i}]",
+                    )
+                )
+
+    if not isinstance(state.dealer_upcard, str) or len(state.dealer_upcard) != 2:
+        errors.append(
+            ValidationErrorDetail(
+                code="dealer_upcard_invalid",
+                message="dealer_upcard должен быть токеном вида '9c' (2 символа)",
+                path="dealer_upcard",
+            )
+        )
+
+    if state.split_count < 0:
+        errors.append(
+            ValidationErrorDetail(
+                code="split_count_negative",
+                message="split_count не может быть отрицательным",
+                path="split_count",
+            )
+        )
+    elif state.rules and state.split_count > int(getattr(state.rules, "max_splits", 0)):
+        errors.append(
+            ValidationErrorDetail(
+                code="split_count_exceeds_max",
+                message="split_count превышает правила max_splits",
+                path="split_count",
+            )
+        )
+
+    if state.allowed_actions is not None:
+        if not isinstance(state.allowed_actions, list):
+            errors.append(
+                ValidationErrorDetail(
+                    code="allowed_actions_invalid",
+                    message="allowed_actions должен быть списком",
+                    path="allowed_actions",
+                )
+            )
+        else:
+            for i, a in enumerate(state.allowed_actions):
+                if not hasattr(a, "value"):
+                    errors.append(
+                        ValidationErrorDetail(
+                            code="allowed_actions_item_invalid",
+                            message="allowed_actions содержит некорректное значение",
+                            path=f"allowed_actions[{i}]",
+                        )
+                    )
+
     if errors:
         raise StateValidationError(errors)
-
-

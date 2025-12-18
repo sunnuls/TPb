@@ -5,7 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from coach_app.product.mode import ProductMode
 from coach_app.schemas.common import Card, Confidence, Street
+from coach_app.schemas.meta import Meta
 
 
 class PokerActionType(str, Enum):
@@ -86,6 +88,8 @@ class PokerDecision(BaseModel):
 class PokerAnalyzeRequest(BaseModel):
     hand_history_text: str = Field(..., min_length=1)
     game_type: PokerGameType = PokerGameType.NLHE_6MAX_CASH
+    mode: ProductMode = ProductMode.REVIEW
+    meta: Meta | None = None
 
 
 class PokerTrainRequest(BaseModel):
@@ -93,5 +97,7 @@ class PokerTrainRequest(BaseModel):
     hand_history_text: str = Field(..., min_length=1)
     mode: Literal["review", "trainer"] = "review"
     game_type: PokerGameType = PokerGameType.NLHE_6MAX_CASH
+    product_mode: ProductMode = ProductMode.REVIEW
+    meta: Meta | None = None
 
 

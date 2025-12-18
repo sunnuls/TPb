@@ -1,0 +1,30 @@
+api_base_url: "http://127.0.0.1:8000"
+endpoint_path: "/analyze/poker/screenshot"
+
+mode: "instant_review"
+
+meta:
+  source: "unknown"
+  is_realtime: true
+  client_tag: "instant_review_tracker"
+
+fps: 2
+
+input_mode: "dev_frames"  # dev_frames | desktop
+
+dev_frames_folder: "tools/frames"
+dev_frames_loop: true
+
+ui_change:
+  enabled: false
+  roi: [0, 0, 100, 100]  # x,y,w,h
+  threshold: 20.0
+
+desktop_capture:
+  enabled: false
+  region: null  # [left, top, right, bottom]
+
+telegram:
+  enabled: false
+  bot_token: null
+  chat_id: null

@@ -1,0 +1,5 @@
+adapter_name: pokerstars_desktop
+supported_games:
+  - poker
+anchors: {}
+notes: "Placeholder config for PokerStars desktop. UI coordinates/anchors are not hardcoded yet."

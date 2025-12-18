@@ -1,0 +1,6 @@
+adapter_name: generic
+supported_games:
+  - poker
+  - blackjack
+anchors: {}
+notes: "Generic conservative adapter (v1): detects only visible cards + infers street by board count."

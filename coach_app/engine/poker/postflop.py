@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Mapping
 
+from coach_app.engine.poker.board import classify_board
+from coach_app.engine.poker.context import detect_postflop_context
 from coach_app.engine.poker.hand_strength import HandCategory, categorize
+from coach_app.engine.poker.lines import LineType, select_line
+from coach_app.engine.poker.sizing import recommend_sizing
+from coach_app.engine.poker.streets import previous_street_action_summary, runout_change
+from coach_app.schemas.common import Street
 from coach_app.schemas.poker import PokerActionType
 
 
@@ -45,7 +52,10 @@ def recommend_postflop(
     pot: float | None,
     to_call: float | None,
     stack_bucket: str,
+    stack_class: str | None,
     game_type: str,
+    action_history: list[Mapping[str, Any]] | None,
+    hero_name: str | None,
 ) -> PostflopPlan:
     notes: list[str] = []
     hc = categorize(hero_hole, board)
@@ -68,279 +78,128 @@ def recommend_postflop(
 
     plan_hint: str
 
-    # Made hand tiers (simplified)
-    # Deterministic action
-    if hc.category in strong_made:
-        notes.append("Сильная готовая рука: это верх диапазона -> играем на вэлью.")
-        plan_hint = "value: ставка/рейз для вэлью и защиты"
-        return PostflopPlan(
-            action=PokerActionType.bet,
-            sizing=0.66 if pot is not None else None,
-            confidence=0.7 if pot is not None else 0.5,
-            facts={
-                "pot_odds": pot_odds,
-                "range_position": range_pos,
-                "plan_hint": plan_hint,
-                "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                "opponent_range_name": "postflop_vs_bet" if (to_call or 0) > 0 else "postflop_vs_check",
-                "range_intersection_note": "Сильная готовая рука в верхней части диапазона",
-                "range_summary": "Range Model v0: постфлоп без трекинга линий; используем proxy по категории руки.",
-            },
-            notes=notes,
-            hand_category=hc,
+    try:
+        decision_street = Street(street)
+    except Exception:
+        decision_street = Street.FLOP
+
+    prev_summary = previous_street_action_summary(
+        {"street": decision_street, "board": board, "action_history": action_history},
+        action_history=action_history,
+        hero_name=hero_name,
+    )
+
+    ru_change: dict[str, Any] | None = None
+    if decision_street == Street.TURN and len(board) >= 4:
+        ru_change = runout_change(board_before=board[:3], board_after=board[:4])
+    if decision_street == Street.RIVER and len(board) >= 5:
+        ru_change = runout_change(board_before=board[:4], board_after=board[:5])
+
+    board_texture = classify_board(board)
+    ctx = detect_postflop_context(action_history=action_history, hero_name=hero_name, decision_street=decision_street)
+    facing_bet = to_call is not None and to_call > 0
+
+    line = select_line(
+        street=street,
+        board_texture=board_texture,
+        hero_range_position=range_pos,
+        hero_hand_category=hc.category,
+        preflop_aggressor=ctx.was_hero_preflop_aggressor,
+        in_position=ctx.in_position,
+        street_initiative=ctx.street_initiative,
+        flop_checked_through=ctx.flop_checked_through,
+        stack_depth_class=stack_class,
+        game_type=game_type,
+        facing_bet=facing_bet,
+        previous_street_summary=prev_summary,
+        runout_change=ru_change,
+    )
+
+    sizing_rec = None
+    if line.line_type in (
+        LineType.cbet,
+        LineType.probe,
+        LineType.delayed_cbet,
+        LineType.bet_call,
+        LineType.bet_fold,
+        LineType.second_barrel,
+        LineType.turn_probe,
+        LineType.turn_value,
+        LineType.river_value,
+        LineType.river_bluff,
+    ):
+        action = PokerActionType.bet
+        sizing_rec = recommend_sizing(
+            sizing_category=line.sizing_category,
+            street=street,
+            board_texture=board_texture,
+            pot=pot,
+            to_call=to_call,
+            action="bet",
         )
-
-    if hc.category in medium_made:
-        # With pot odds + facing bet -> call small, otherwise check
-        if to_call is not None and to_call > 0:
-            plan_hint = "bluff-catcher: чек-колл умеренных ставок"
-            if pot_odds is None:
-                notes.append("Есть колл, но банк/пот-оддсы неизвестны -> консервативно.")
-                return PostflopPlan(
-                    action=PokerActionType.call,
-                    sizing=None,
-                    confidence=0.35,
-                    facts={
-                        "pot_odds": None,
-                        "range_position": range_pos,
-                        "plan_hint": plan_hint,
-                        "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                        "opponent_range_name": "postflop_bet_range_v0",
-                        "range_intersection_note": "Средняя часть диапазона: колл без точных odds = осторожно",
-                        "range_summary": "Range Model v0: постфлоп с ограниченными данными.",
-                    },
-                    notes=notes,
-                    hand_category=hc,
-                )
-            # Pair vs bet: call if cheap
-            if is_short_mtt:
-                # short stack: меньше коллов/блеф-кэтчей
-                if pot_odds <= 0.25:
-                    notes.append("MTT <20bb: блеф-кэтч с парой только при очень дешёвой цене.")
-                    return PostflopPlan(
-                        action=PokerActionType.call,
-                        sizing=None,
-                        confidence=0.5,
-                        facts={
-                            "pot_odds": pot_odds,
-                            "range_position": range_pos,
-                            "plan_hint": plan_hint,
-                            "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                            "opponent_range_name": "postflop_bet_range_v0",
-                            "range_intersection_note": "MTT short: колл только при дешёвой цене",
-                            "range_summary": "Range Model v0: short stack снижает блеф-кэтч частоту.",
-                        },
-                        notes=notes,
-                        hand_category=hc,
-                    )
-                notes.append("MTT <20bb: чаще фолд с маргинальной парой против ставки.")
-                return PostflopPlan(
-                    action=PokerActionType.fold,
-                    sizing=None,
-                    confidence=0.6,
-                    facts={
-                        "pot_odds": pot_odds,
-                        "range_position": range_pos,
-                        "plan_hint": "fold: защита стека важнее маргинальных коллов",
-                        "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                        "opponent_range_name": "postflop_bet_range_v0",
-                        "range_intersection_note": "MTT short: маргинальные пары чаще уходят в фолд",
-                        "range_summary": "Range Model v0: short stack = низкая терпимость к дисперсии.",
-                    },
-                    notes=notes,
-                    hand_category=hc,
-                )
-
-            if pot_odds <= 0.33:
-                notes.append("Пара против ставки: колл при приемлемых pot odds (эвристика).")
-                return PostflopPlan(
-                    action=PokerActionType.call,
-                    sizing=None,
-                    confidence=0.55,
-                    facts={
-                        "pot_odds": pot_odds,
-                        "range_position": range_pos,
-                        "plan_hint": plan_hint,
-                        "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                        "opponent_range_name": "postflop_bet_range_v0",
-                        "range_intersection_note": "Средняя часть диапазона: колл при приемлемых odds",
-                        "range_summary": "Range Model v0: постфлоп — диапазонные роли через категорию руки.",
-                    },
-                    notes=notes,
-                    hand_category=hc,
-                )
-            notes.append("Пара против дорогой ставки: фолд (эвристика).")
-            return PostflopPlan(
-                action=PokerActionType.fold,
-                sizing=None,
-                confidence=0.6,
-                facts={
-                    "pot_odds": pot_odds,
-                    "range_position": range_pos,
-                    "plan_hint": "fold: слишком дорого для блеф-кэтча",
-                    "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                    "opponent_range_name": "postflop_bet_range_v0",
-                    "range_intersection_note": "Средняя/низ диапазона: сдаёмся против дорогой ставки",
-                    "range_summary": "Range Model v0: постфлоп — без солвера, только объяснимые эвристики.",
-                },
-                notes=notes,
-                hand_category=hc,
-            )
-
-        notes.append("Без явного колла: с парой чаще контролируем банк.")
-        return PostflopPlan(
-            action=PokerActionType.check,
-            sizing=None,
-            confidence=0.5,
-            facts={
-                "pot_odds": pot_odds,
-                "range_position": range_pos,
-                "plan_hint": "control: чек, чтобы реализовать equity и не раздувать банк",
-                "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                "opponent_range_name": "postflop_vs_check",
-                "range_intersection_note": "Средняя часть диапазона: контроль банка",
-                "range_summary": "Range Model v0: постфлоп — контроль банка с маргинальной силой.",
-            },
-            notes=notes,
-            hand_category=hc,
+        sizing = sizing_rec.recommended_bet_amount
+    elif line.line_type in (LineType.check_raise, LineType.turn_check_raise) and facing_bet:
+        action = PokerActionType.raise_
+        sizing_rec = recommend_sizing(
+            sizing_category=line.sizing_category,
+            street=street,
+            board_texture=board_texture,
+            pot=pot,
+            to_call=to_call,
+            action="raise",
         )
+        sizing = sizing_rec.recommended_raise_to
+    elif line.line_type in (LineType.check_call, LineType.river_check_call) and facing_bet:
+        action = PokerActionType.call
+        sizing = None
+    elif line.line_type in (LineType.check, LineType.give_up, LineType.river_check_fold) and facing_bet:
+        action = PokerActionType.fold
+        sizing = None
+    elif line.line_type == LineType.give_up:
+        action = PokerActionType.check
+        sizing = None
+    else:
+        action = PokerActionType.check
+        sizing = None
 
-    # Draws / air
-    est = _draw_equity_heuristic(street, hc)
-    if to_call is not None and to_call > 0:
-        plan_hint = "semi-bluff/call: решение зависит от цены"
-        if pot_odds is None:
-            notes.append("Есть колл, но банк/пот-оддсы неизвестны -> фолд по умолчанию.")
-            return PostflopPlan(
-                action=PokerActionType.fold,
-                sizing=None,
-                confidence=0.4,
-                facts={
-                    "pot_odds": None,
-                    "estimated_equity": est,
-                    "range_position": range_pos,
-                    "plan_hint": "fold: нет данных для +EV колла",
-                    "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                    "opponent_range_name": "postflop_bet_range_v0",
-                    "range_intersection_note": "Низ диапазона: без odds не тянем дро",
-                    "range_summary": "Range Model v0: нет рандома/солвера; без odds — фолд по умолчанию.",
-                },
-                notes=notes,
-                hand_category=hc,
-            )
-        if is_short_mtt:
-            # short stack: меньше "погони" за дро
-            if est is not None and pot_odds is not None and est >= pot_odds and pot_odds <= 0.25:
-                notes.append("MTT <20bb: тянем дро только при очень дешёвой цене.")
-                return PostflopPlan(
-                    action=PokerActionType.call,
-                    sizing=None,
-                    confidence=0.5,
-                    facts={
-                        "pot_odds": pot_odds,
-                        "estimated_equity": est,
-                        "range_position": range_pos,
-                        "plan_hint": plan_hint,
-                        "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                        "opponent_range_name": "postflop_bet_range_v0",
-                        "range_intersection_note": "MTT short: колл дро только при дешёвой цене",
-                        "range_summary": "Range Model v0: short stack снижает частоту коллов на дро.",
-                    },
-                    notes=notes,
-                    hand_category=hc,
-                )
-            notes.append("MTT <20bb: чаще фолд дро против ставки, чтобы снизить дисперсию.")
-            return PostflopPlan(
-                action=PokerActionType.fold,
-                sizing=None,
-                confidence=0.6,
-                facts={
-                    "pot_odds": pot_odds,
-                    "estimated_equity": est,
-                    "range_position": range_pos,
-                    "plan_hint": "fold: short stack, избегаем маргинальных коллов",
-                    "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                    "opponent_range_name": "postflop_bet_range_v0",
-                    "range_intersection_note": "MTT short: дисциплина важнее тонких коллов",
-                    "range_summary": "Range Model v0: short stack = меньше блефов/дро-коллов.",
-                },
-                notes=notes,
-                hand_category=hc,
-            )
+    base_conf = 0.45
+    if range_pos == "top":
+        base_conf = 0.65
+    elif range_pos == "middle":
+        base_conf = 0.55
 
-        if est is not None and est >= pot_odds:
-            notes.append("Дро: колл, если оценочная equity >= pot odds (эвристика).")
-            return PostflopPlan(
-                action=PokerActionType.call,
-                sizing=None,
-                confidence=0.55,
-                facts={
-                    "pot_odds": pot_odds,
-                    "estimated_equity": est,
-                    "range_position": range_pos,
-                    "plan_hint": plan_hint,
-                    "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                    "opponent_range_name": "postflop_bet_range_v0",
-                    "range_intersection_note": "Средняя часть диапазона: колл дро при достаточной цене",
-                    "range_summary": "Range Model v0: дро-решение по pot odds vs оценочной equity.",
-                },
-                notes=notes,
-                hand_category=hc,
-            )
-        notes.append("Дро/хайкард: фолд, если pot odds требуют больше equity (эвристика).")
-        return PostflopPlan(
-            action=PokerActionType.fold,
-            sizing=None,
-            confidence=0.6,
-            facts={
-                "pot_odds": pot_odds,
-                "estimated_equity": est,
-                "range_position": range_pos,
-                "plan_hint": "fold: цена слишком высокая для дро",
-                "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                "opponent_range_name": "postflop_bet_range_v0",
-                "range_intersection_note": "Низ/середина диапазона: сдаёмся при плохой цене",
-                "range_summary": "Range Model v0: без симуляций — только объяснимые пороги.",
-            },
-            notes=notes,
-            hand_category=hc,
-        )
-
-    if is_short_mtt and (hc.is_flush_draw or hc.is_straight_draw):
-        notes.append("MTT <20bb: меньше полублефов без фолд-эквити -> чаще чек.")
-        plan_hint = "control: чек, реализуем equity"
-        return PostflopPlan(
-            action=PokerActionType.check,
-            sizing=None,
-            confidence=0.45,
-            facts={
-                "pot_odds": pot_odds,
-                "estimated_equity": est,
-                "range_position": range_pos,
-                "plan_hint": plan_hint,
-                "hero_range_name": f"RFI_proxy_{stack_bucket}",
-                "opponent_range_name": "postflop_vs_check",
-                "range_intersection_note": "MTT short: меньше полублефов",
-                "range_summary": "Range Model v0: short stack упрощает линии.",
-            },
-            notes=notes,
-            hand_category=hc,
-        )
-
-    notes.append("Нет данных о колле/банке -> чек по умолчанию.")
+    plan_hint = ""
+    if isinstance(line.street_plan, dict):
+        plan_hint = str(line.street_plan.get("immediate_plan") or "")
+    elif line.street_plan is not None:
+        plan_hint = str(line.street_plan)
     return PostflopPlan(
-        action=PokerActionType.check,
-        sizing=None,
-        confidence=0.35,
+        action=action,
+        sizing=sizing,
+        confidence=base_conf,
         facts={
             "pot_odds": pot_odds,
-            "estimated_equity": est,
             "range_position": range_pos,
-            "plan_hint": "neutral: чек (недостаточно данных)",
+            "plan_hint": plan_hint,
             "hero_range_name": f"RFI_proxy_{stack_bucket}",
-            "opponent_range_name": "postflop_vs_check",
-            "range_intersection_note": "Недостаточно фактов -> нейтральная линия",
-            "range_summary": "Range Model v0: без данных о ставках — осторожный чек.",
+            "opponent_range_name": "postflop_vs_bet" if facing_bet else "postflop_vs_check",
+            "range_intersection_note": "Postflop Line Logic v1",
+            "range_summary": "Range Model v0 + Postflop Line Logic v1 (детерминированные эвристики, без солвера).",
+            "board_texture": board_texture.to_dict(),
+            "preflop_aggressor": ctx.was_hero_preflop_aggressor,
+            "in_position": ctx.in_position,
+            "street_initiative": ctx.street_initiative,
+            "flop_checked_through": ctx.flop_checked_through,
+            "previous_street_summary": prev_summary,
+            "runout_change": ru_change,
+            "selected_line": line.line_type.value,
+            "sizing_category": line.sizing_category,
+            "pot_fraction": sizing_rec.pot_fraction if sizing_rec is not None else None,
+            "recommended_bet_amount": sizing_rec.recommended_bet_amount if sizing_rec is not None else None,
+            "recommended_raise_to": sizing_rec.recommended_raise_to if sizing_rec is not None else None,
+            "rounding_step": sizing_rec.rounding_step if sizing_rec is not None else None,
+            "line_reason": line.line_reason.value,
+            "street_plan": line.street_plan,
         },
         notes=notes,
         hand_category=hc,

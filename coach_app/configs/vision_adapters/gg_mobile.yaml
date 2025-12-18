@@ -1,0 +1,5 @@
+adapter_name: gg_mobile
+supported_games:
+  - poker
+anchors: {}
+notes: "Placeholder config for GGPoker mobile. UI coordinates/anchors are not hardcoded yet."

@@ -28,7 +28,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["coach_app/tests"]
+testpaths = ["coach_app/tests", "tools/tests"]
 addopts = "-q"
 
 [tool.ruff]

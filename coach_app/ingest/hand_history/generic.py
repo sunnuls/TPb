@@ -219,6 +219,16 @@ class GenericHandHistoryParser:
                 "pot": pot if pot > 0 else None,
                 "to_call": to_call,
                 "names_seen": sorted(names_seen),
+                "action_history": [
+                    {
+                        "street": a.street.value,
+                        "actor": a.actor,
+                        "kind": a.kind,
+                        "amount": a.amount,
+                        "to_amount": a.to_amount,
+                    }
+                    for a in actions
+                ],
             },
         )
         return state, report
@@ -234,6 +244,11 @@ def _compute_pot_to_call_generic(
     ]
     decision_street = hero_streets[-1] if hero_streets else fallback_street
 
+    decision_idx: int | None = None
+    for i, a in enumerate(actions):
+        if a.street == decision_street and a.actor == hero_name and a.kind in ("fold", "check", "call", "bet", "raise"):
+            decision_idx = i
+
     invested: dict[str, float] = {}
     current_bet = 0.0
     pot = 0.0
@@ -246,12 +261,12 @@ def _compute_pot_to_call_generic(
 
     reset_street()
 
-    for a in actions:
+    for i, a in enumerate(actions):
         if a.street != street:
             street = a.street
             reset_street()
 
-        if a.street == decision_street and a.actor == hero_name and a.kind in ("fold", "check", "call", "bet", "raise"):
+        if decision_idx is not None and i == decision_idx:
             to_call = max(0.0, current_bet - invested.get(hero_name, 0.0))
             return pot, to_call, decision_street
 
