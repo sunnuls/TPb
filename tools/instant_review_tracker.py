@@ -148,11 +148,25 @@ class InstantReviewStateMachine:
         partial_state = self._vision_parse(frame_bytes)
         self.last_state_hash = _stable_hash(partial_state)
 
-    def trigger_post_action(self, *, trigger: str) -> None:
-        self.pending_post_action = True
+    def set_trigger(self, *, trigger: str) -> None:
         self.pending_trigger = trigger if trigger in ("ui_change", "hotkey", "hand_complete", "unknown") else "unknown"
 
+    def trigger_post_action(self, *, trigger: str) -> None:
+        self.pending_post_action = True
+        self.set_trigger(trigger=trigger)
+
     def build_payload(self, *, mode: str, frame_id: str) -> dict[str, Any] | None:
+        if mode == "live_rta":
+            meta = dict(self.meta_defaults)
+            meta.update(
+                {
+                    "post_action": False,
+                    "trigger": self.pending_trigger,
+                    "frame_id": frame_id,
+                    "session_id": self.session_id,
+                }
+            )
+            return {"mode": mode, "meta": meta}
         if not self.pending_post_action:
             return None
         meta = dict(self.meta_defaults)
@@ -272,7 +286,10 @@ def main() -> int:
 
         if hotkey_event.is_set():
             hotkey_event.clear()
-            sm.trigger_post_action(trigger="hotkey")
+            if cfg.mode == "live_rta":
+                sm.set_trigger(trigger="hotkey")
+            else:
+                sm.trigger_post_action(trigger="hotkey")
 
         if ui_enabled and roi and isinstance(roi, list) and len(roi) == 4:
             x, y, w, h = [int(v) for v in roi]
@@ -282,8 +299,12 @@ def main() -> int:
             curr_roi = curr.crop((x, y, x + w, y + h))
             if prev_roi_img is not None:
                 score = _roi_change_score(prev_roi_img, curr_roi)
-                if score >= threshold and not sm.pending_post_action:
-                    sm.trigger_post_action(trigger="ui_change")
+                if score >= threshold:
+                    if cfg.mode == "live_rta":
+                        if sm.pending_trigger == "unknown":
+                            sm.set_trigger(trigger="ui_change")
+                    elif not sm.pending_post_action:
+                        sm.trigger_post_action(trigger="ui_change")
             prev_roi_img = curr_roi
 
         payload = sm.build_payload(mode=cfg.mode, frame_id=frame_id)

@@ -17,6 +17,11 @@
 - Intended use: restricted live coaching.
 - Poker: only preflop is allowed.
 
+### LIVE_RTA
+
+- Intended use: real-time coaching for simulator environments.
+- Hard rule: `mode == LIVE_RTA` is allowed only when `meta.source == "simulator"`.
+
 ### INSTANT_REVIEW
 
 **Instant Review** is **post-action coaching**, not real-time assistance.

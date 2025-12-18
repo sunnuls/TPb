@@ -88,3 +88,58 @@ def test_screenshot_endpoint_merges_hh_and_vision_and_adds_disclaimer():
 
     assert float(data["confidence"]) < 1.0
     assert data["explanation"].startswith("Анализ основан")
+
+
+def test_live_rta_blocks_when_source_not_simulator():
+    app = create_app()
+
+    def dep():
+        return _MockVisionAdapter(
+            result=VisionParseResult(
+                partial_state={"hero_hole": ["Ah", "Ks"], "street": "preflop"},
+                confidence_map={"hero_hole": 0.95, "street": 0.9},
+                warnings=["vision: hero_hole detected"],
+                adapter_name="mock",
+                adapter_version="test",
+            )
+        )
+
+    app.dependency_overrides[routes_poker.get_poker_vision_adapter] = dep
+    client = TestClient(app)
+
+    resp = client.post(
+        "/analyze/poker/screenshot",
+        files={"image": ("x.png", _png_bytes(), "image/png")},
+        data={"payload": '{"mode": "live_rta", "meta": {"source": "unknown", "is_realtime": true}}'},
+    )
+    assert resp.status_code == 403, resp.text
+    detail = resp.json()["detail"]
+    assert detail["reason"] == "live_rta_requires_simulator_source"
+
+
+def test_live_rta_allows_for_simulator_source():
+    app = create_app()
+
+    def dep():
+        return _MockVisionAdapter(
+            result=VisionParseResult(
+                partial_state={"hero_hole": ["Ah", "Ks"], "street": "preflop"},
+                confidence_map={"hero_hole": 0.95, "street": 0.9},
+                warnings=["vision: hero_hole detected"],
+                adapter_name="mock",
+                adapter_version="test",
+            )
+        )
+
+    app.dependency_overrides[routes_poker.get_poker_vision_adapter] = dep
+    client = TestClient(app)
+
+    resp = client.post(
+        "/analyze/poker/screenshot",
+        files={"image": ("x.png", _png_bytes(), "image/png")},
+        data={"payload": '{"mode": "live_rta", "meta": {"source": "simulator", "is_realtime": true}}'},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "decision" in data
+    assert "explanation" in data

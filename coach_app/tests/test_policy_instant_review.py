@@ -31,3 +31,17 @@ def test_poker_room_realtime_post_action_true_allows():
     res = enforce_policy(ProductMode.INSTANT_REVIEW, "poker", state={}, meta=meta, confidence=None)
     assert res.allowed is True
     assert res.reason == PolicyReason.OK
+
+
+def test_live_rta_requires_simulator_source_blocks():
+    meta = Meta(source="unknown", is_realtime=True)
+    res = enforce_policy(ProductMode.LIVE_RTA, "poker", state={}, meta=meta, confidence=None)
+    assert res.allowed is False
+    assert res.reason == PolicyReason.LIVE_RTA_REQUIRES_SIMULATOR_SOURCE
+
+
+def test_live_rta_simulator_source_allows():
+    meta = Meta(source="simulator", is_realtime=True)
+    res = enforce_policy(ProductMode.LIVE_RTA, "poker", state={}, meta=meta, confidence=None)
+    assert res.allowed is True
+    assert res.reason == PolicyReason.OK

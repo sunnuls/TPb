@@ -8,3 +8,4 @@ class ProductMode(str, Enum):
     TRAIN = "train"
     LIVE_RESTRICTED = "live_restricted"
     INSTANT_REVIEW = "instant_review"
+    LIVE_RTA = "live_rta"

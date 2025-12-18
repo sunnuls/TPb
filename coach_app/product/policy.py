@@ -18,6 +18,7 @@ class PolicyReason(str, Enum):
     TRAIN_EXTERNAL_INPUT_BLOCK = "train_external_input_block"
     LIVE_RESTRICTED_POKER_POSTFLOP_BLOCK = "live_restricted_poker_postflop_block"
     INSTANT_REVIEW_REQUIRES_POST_ACTION = "instant_review_requires_post_action"
+    LIVE_RTA_REQUIRES_SIMULATOR_SOURCE = "live_rta_requires_simulator_source"
     UNKNOWN_MODE = "unknown_mode"
 
 
@@ -112,6 +113,16 @@ def enforce_policy(
                 allowed=False,
                 reason=PolicyReason.INSTANT_REVIEW_REQUIRES_POST_ACTION,
                 message="Заблокировано (INSTANT_REVIEW): подсказки доступны только после совершения действия.",
+                audit_flags=audit_flags,
+            )
+        return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
+
+    if mode == ProductMode.LIVE_RTA:
+        if meta.source != "simulator":
+            return PolicyResult(
+                allowed=False,
+                reason=PolicyReason.LIVE_RTA_REQUIRES_SIMULATOR_SOURCE,
+                message="Заблокировано (LIVE_RTA): режим доступен только для источника simulator.",
                 audit_flags=audit_flags,
             )
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
