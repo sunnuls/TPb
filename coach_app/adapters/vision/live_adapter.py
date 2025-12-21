@@ -127,19 +127,25 @@ class LiveVisionAdapter(VisionAdapter):
         return None, float(max(0.0, best_score))
 
     def extract_text(self, roi_img: "Any") -> tuple[str, float]:
-        import cv2
-        import pytesseract
+        try:
+            import cv2
+            import pytesseract
+        except Exception:
+            return "", 0.0
 
         if roi_img is None:
             return "", 0.0
 
-        gray = cv2.cvtColor(roi_img, cv2.COLOR_RGB2GRAY) if roi_img.ndim == 3 else roi_img
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        try:
+            gray = cv2.cvtColor(roi_img, cv2.COLOR_RGB2GRAY) if roi_img.ndim == 3 else roi_img
+            gray = cv2.GaussianBlur(gray, (3, 3), 0)
+            gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
-        cfg = "--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789.$"
-        txt = pytesseract.image_to_string(gray, config=cfg) or ""
-        txt = txt.strip()
+            cfg = "--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789.$"
+            txt = pytesseract.image_to_string(gray, config=cfg) or ""
+            txt = txt.strip()
+        except Exception:
+            return "", 0.0
 
         # Heuristic confidence: non-empty numeric-like output.
         conf = 0.0

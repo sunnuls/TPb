@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from coach_app.coach.explain import explain_from_key_facts
 from coach_app.engine.blackjack.analyze import analyze_blackjack
@@ -14,6 +14,17 @@ from coach_app.state.validate import StateValidationError, validate_blackjack_st
 
 
 router = APIRouter()
+
+
+def _normalize_blackjack_card_token(token: str) -> str:
+    if not isinstance(token, str):
+        return token
+    t = token.strip()
+    if len(t) == 1:
+        return f"{t.upper()}s"
+    if len(t) == 2:
+        return f"{t[0].upper()}{t[1].lower()}"
+    return t
 
 
 class BlackjackAnalyzeResponse(BaseModel):
@@ -37,17 +48,29 @@ def analyze_blackjack_route(req: BlackjackAnalyzeRequest) -> BlackjackAnalyzeRes
             },
         )
 
-    state = BlackjackState(
-        player_hand=req.player_hand,
-        dealer_upcard=req.dealer_upcard,
-        allowed_actions=req.allowed_actions,
-        split_count=req.split_count,
-        hand_doubled=req.hand_doubled,
-        running_count=req.running_count,
-        true_count=req.true_count,
-        rules=req.rules,
-        confidence=1.0,
-    )
+    player_hand = [_normalize_blackjack_card_token(c) for c in (req.player_hand or [])]
+    dealer_upcard = _normalize_blackjack_card_token(req.dealer_upcard)
+
+    try:
+        state = BlackjackState(
+            player_hand=player_hand,
+            dealer_upcard=dealer_upcard,
+            allowed_actions=req.allowed_actions,
+            split_count=req.split_count,
+            hand_doubled=req.hand_doubled,
+            running_count=req.running_count,
+            true_count=req.true_count,
+            rules=req.rules,
+            confidence=1.0,
+        )
+    except ValidationError as ve:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Некорректный формат запроса",
+                "errors": ve.errors(),
+            },
+        )
 
     try:
         validate_blackjack_state(state)

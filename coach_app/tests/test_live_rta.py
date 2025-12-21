@@ -65,7 +65,7 @@ def test_live_rta_emits_when_ethics_off(tmp_path, monkeypatch):
     # Prevent real LiveVisionAdapter usage.
     monkeypatch.setattr(live_rta, "LiveVisionAdapter", lambda *a, **k: None)
 
-    rta = live_rta.LiveRTA(str(cfg), output_mode="console", ethical_mode=False)
+    rta = live_rta.LiveRTA(str(cfg), output_mode="console", ethical_mode=False, test_mode=True)
 
     emitted = {"text": None}
 
@@ -102,7 +102,7 @@ def test_live_rta_requires_trigger_in_ethical_mode(tmp_path, monkeypatch):
     monkeypatch.setattr(live_rta.threading, "Thread", _NoStartThread)
     monkeypatch.setattr(live_rta, "LiveVisionAdapter", lambda *a, **k: None)
 
-    rta = live_rta.LiveRTA(str(cfg), output_mode="console", ethical_mode=True)
+    rta = live_rta.LiveRTA(str(cfg), output_mode="console", ethical_mode=True, test_mode=True)
 
     emitted = {"count": 0}
 
@@ -147,7 +147,7 @@ def test_live_rta_does_not_spam_waiting_in_console(tmp_path, monkeypatch):
     monkeypatch.setattr(live_rta.threading, "Thread", _NoStartThread)
     monkeypatch.setattr(live_rta, "LiveVisionAdapter", lambda *a, **k: None)
 
-    rta = live_rta.LiveRTA(str(cfg), output_mode="console", ethical_mode=True)
+    rta = live_rta.LiveRTA(str(cfg), output_mode="console", ethical_mode=True, test_mode=True)
 
     emitted: list[str] = []
 
@@ -188,7 +188,7 @@ def test_live_rta_multiple_tables_overlay_calls(tmp_path, monkeypatch):
     monkeypatch.setattr(live_rta.threading, "Thread", _NoStartThread)
     monkeypatch.setattr(live_rta, "LiveVisionAdapter", lambda *a, **k: None)
 
-    rta = live_rta.LiveRTA(str(cfg), output_mode="overlay", ethical_mode=False)
+    rta = live_rta.LiveRTA(str(cfg), output_mode="overlay", ethical_mode=False, test_mode=True)
 
     # Mock table detection to return two tables.
     monkeypatch.setattr(

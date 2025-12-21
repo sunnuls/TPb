@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-import numpy as np
 import yaml
 from PIL import Image
 
@@ -24,6 +23,11 @@ from coach_app.schemas.poker import PokerGameState
 from coach_app.state.validate import StateValidationError, validate_poker_state
 
 OutputMode = Literal["console", "overlay", "telegram"]
+
+# Keep a reference to the real Thread class for the main loop.
+# Tests monkeypatch live_rta.threading.Thread to prevent starting the keyboard hotkey thread;
+# we still want the main loop thread to run in tests.
+_LoopThread = threading.Thread
 
 
 @dataclass
@@ -44,19 +48,29 @@ def _stable_json_hash(obj: Any) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
-def _roi_change_score(prev: np.ndarray, curr: np.ndarray) -> float:
-    if prev.shape != curr.shape:
+def _roi_change_score(prev: bytes, curr: bytes) -> float:
+    if len(prev) != len(curr):
         return float("inf")
     # absdiff on grayscale
-    try:
-        import cv2
+    mv_a = memoryview(prev)
+    mv_b = memoryview(curr)
+    if len(mv_a) == 0:
+        return 0.0
+    total = 0
+    for i in range(len(mv_a)):
+        total += abs(int(mv_a[i]) - int(mv_b[i]))
+    return float(total) / float(len(mv_a))
 
-        d = cv2.absdiff(prev, curr)
-        return float(np.mean(d))
-    except Exception:
-        a = prev.astype(np.int16)
-        b = curr.astype(np.int16)
-        return float(np.mean(np.abs(a - b)))
+
+def _gray_sample(img: Image.Image, *, roi: Any, size: tuple[int, int] = (160, 90)) -> bytes:
+    if isinstance(roi, list) and len(roi) == 4:
+        x, y, w, h = [int(v) for v in roi]
+        box = (x, y, x + w, y + h)
+        cropped = img.crop(box)
+    else:
+        cropped = img
+    g = cropped.convert("L").resize(size)
+    return g.tobytes()
 
 
 class _OverlaySink:
@@ -128,6 +142,104 @@ class _OverlaySink:
         self._app.processEvents()  # pragma: no cover
 
 
+class _ControlOverlay:
+    def __init__(
+        self,
+        *,
+        on_start: Callable[[], None],
+        on_stop: Callable[[], None],
+        on_quit: Callable[[], None],
+    ) -> None:
+        self._app = None
+        self._QtCore = None
+        self._QtWidgets = None
+        self._window = None
+        self._label = None
+        self._btn = None
+        self._running = False
+        self._on_start = on_start
+        self._on_stop = on_stop
+        self._on_quit = on_quit
+
+    def ensure_started(self) -> None:
+        if self._app is not None:
+            return
+        try:
+            from PyQt5 import QtCore, QtWidgets
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError("PyQt5 не установлен. Установите extra [live].") from e
+
+        self._QtCore = QtCore
+        self._QtWidgets = QtWidgets
+        self._app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+        w = QtWidgets.QWidget()
+        w.setWindowFlags(
+            QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool
+        )
+        w.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        w.setGeometry(50, 50, 220, 110)
+
+        frame = QtWidgets.QFrame(w)
+        frame.setGeometry(0, 0, 220, 110)
+        frame.setStyleSheet(
+            "QFrame { background-color: rgba(0,0,0,160); border-radius: 10px; }"
+        )
+
+        label = QtWidgets.QLabel(frame)
+        label.setGeometry(12, 10, 196, 22)
+        label.setStyleSheet("color: white; font-size: 12px;")
+
+        btn = QtWidgets.QPushButton(frame)
+        btn.setGeometry(12, 40, 196, 28)
+        btn.setStyleSheet(
+            "QPushButton { color: white; background-color: rgba(255,255,255,30); border: 1px solid rgba(255,255,255,60); border-radius: 6px; }"
+            "QPushButton:hover { background-color: rgba(255,255,255,45); }"
+        )
+
+        quit_btn = QtWidgets.QPushButton(frame)
+        quit_btn.setGeometry(12, 74, 196, 24)
+        quit_btn.setText("Quit")
+        quit_btn.setStyleSheet(
+            "QPushButton { color: white; background-color: rgba(255,80,80,70); border: 1px solid rgba(255,255,255,40); border-radius: 6px; }"
+            "QPushButton:hover { background-color: rgba(255,80,80,90); }"
+        )
+
+        def _toggle() -> None:
+            if self._running:
+                self._running = False
+                self._on_stop()
+            else:
+                self._running = True
+                self._on_start()
+            self._refresh_ui()
+
+        btn.clicked.connect(_toggle)
+        quit_btn.clicked.connect(self._on_quit)
+
+        self._window = w
+        self._label = label
+        self._btn = btn
+        self._refresh_ui()
+        w.show()
+        self._app.processEvents()  # pragma: no cover
+
+    def _refresh_ui(self) -> None:
+        if self._label is None or self._btn is None:
+            return
+        if self._running:
+            self._label.setText("LiveRTA: RUNNING")
+            self._btn.setText("Stop")
+        else:
+            self._label.setText("LiveRTA: PAUSED")
+            self._btn.setText("Start")
+
+    def process_events(self) -> None:
+        if self._app is None:
+            return
+        self._app.processEvents()  # pragma: no cover
+
+
 class _TelegramSink:
     def __init__(self, *, bot_token: str, chat_id: str) -> None:
         self.bot_token = bot_token
@@ -157,10 +269,16 @@ class LiveRTA:
         *,
         output_mode: OutputMode = "console",
         ethical_mode: bool = True,
+        test_mode: bool = False,
+        manual_start: bool = False,
+        control_overlay: bool = False,
     ) -> None:
         self.config_path = Path(config_path)
         self.output_mode: OutputMode = output_mode
         self.ethical_mode = bool(ethical_mode)
+        self.test_mode = bool(test_mode)
+        self.manual_start = bool(manual_start)
+        self.control_overlay = bool(control_overlay)
 
         data = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
 
@@ -203,18 +321,32 @@ class LiveRTA:
 
         self._force_next_analysis = threading.Event()
 
+        self._armed = threading.Event()
+        if not self.manual_start:
+            self._armed.set()
+
+        self._control: _ControlOverlay | None = None
+
         self.session_id = uuid.uuid4().hex
 
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=2)
+            join = getattr(self._thread, "join", None)
+            if callable(join) and threading.current_thread() is not self._thread:
+                join(timeout=2)
 
     def start(self) -> None:
         if self._thread is not None:
             return
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread = _LoopThread(target=self._loop, daemon=True)
         self._thread.start()
+
+    def arm(self) -> None:
+        self._armed.set()
+
+    def disarm(self) -> None:
+        self._armed.clear()
 
     def join(self) -> None:
         if self._thread is None:
@@ -307,6 +439,19 @@ class LiveRTA:
         return [("default", None, None)]  # type: ignore[list-item]
 
     def _loop(self) -> None:
+        if self.control_overlay:
+            def _on_start() -> None:
+                self.arm()
+
+            def _on_stop() -> None:
+                self.disarm()
+
+            def _on_quit() -> None:
+                self.stop()
+
+            self._control = _ControlOverlay(on_start=_on_start, on_stop=_on_stop, on_quit=_on_quit)
+            self._control.ensure_started()
+
         def hotkey_thread() -> None:
             try:
                 import keyboard  # type: ignore[import-not-found]
@@ -330,14 +475,21 @@ class LiveRTA:
         ui_roi = self.cfg.ui_change.get("roi")
         ui_threshold = float(self.cfg.ui_change.get("threshold", 20.0))
 
-        prev_ui_roi_gray: dict[str, np.ndarray | None] = {}
+        prev_ui_roi_gray: dict[str, bytes | None] = {}
 
         post_enabled = bool(self.cfg.post_action_change.get("enabled", self.ethical_mode))
         post_roi = self.cfg.post_action_change.get("roi")
         post_threshold = float(self.cfg.post_action_change.get("threshold", 18.0))
-        prev_post_gray: dict[str, np.ndarray | None] = {}
+        prev_post_gray: dict[str, bytes | None] = {}
 
         while not self._stop.is_set():
+            if self._control is not None:
+                self._control.process_events()
+
+            if not self._armed.is_set():
+                time.sleep(0.05)
+                continue
+
             tables = self._detect_table_regions()
 
             if self._force_next_analysis.is_set():
@@ -358,50 +510,39 @@ class LiveRTA:
                 st = self._tables_state[table_id]
 
                 pil_img = self.vision.capture_screen(region=region)
-                np_img = np.asarray(pil_img)
 
                 if self.ethical_mode and post_enabled:
-                    if isinstance(post_roi, list) and len(post_roi) == 4:
-                        x, y, w, h = [int(v) for v in post_roi]
-                        area = np_img[y : y + h, x : x + w]
-                    else:
-                        area = np_img
-
-                    if area.size > 0:
-                        try:
-                            import cv2
-
-                            gray = cv2.cvtColor(area, cv2.COLOR_RGB2GRAY) if area.ndim == 3 else area
-                            gray = cv2.resize(gray, (160, 90))
-                        except Exception:
-                            gray = area.mean(axis=2).astype(np.uint8) if area.ndim == 3 else area.astype(np.uint8)
-                            gray = gray[:: max(1, gray.shape[0] // 90), :: max(1, gray.shape[1] // 160)]
-
-                        prev = prev_post_gray.get(table_id)
-                        if prev is not None:
-                            score = _roi_change_score(prev, gray)
-                            if score >= post_threshold and not bool(st.get("pending_post_action")):
-                                if st.get("pending_trigger") == "unknown":
-                                    st["pending_trigger"] = "ui_change"
-                                st["pending_post_action"] = True
-                        prev_post_gray[table_id] = gray
+                    gray = _gray_sample(pil_img, roi=post_roi)
+                    prev = prev_post_gray.get(table_id)
+                    if prev is not None:
+                        score = _roi_change_score(prev, gray)
+                        if score >= post_threshold and not bool(st.get("pending_post_action")):
+                            if st.get("pending_trigger") == "unknown":
+                                st["pending_trigger"] = "ui_change"
+                            st["pending_post_action"] = True
+                    prev_post_gray[table_id] = gray
 
                 if ui_enabled and isinstance(ui_roi, list) and len(ui_roi) == 4:
-                    x, y, w, h = [int(v) for v in ui_roi]
-                    roi = np_img[y : y + h, x : x + w]
-                    if roi.size > 0:
-                        gray = roi.mean(axis=2).astype(np.uint8) if roi.ndim == 3 else roi.astype(np.uint8)
-                        prev = prev_ui_roi_gray.get(table_id)
-                        if prev is not None:
-                            score = _roi_change_score(prev, gray)
-                            if score >= ui_threshold and st.get("pending_trigger") == "unknown":
-                                st["pending_trigger"] = "ui_change"
-                                if self.ethical_mode:
-                                    st["pending_post_action"] = True
-                        prev_ui_roi_gray[table_id] = gray
+                    gray = _gray_sample(pil_img, roi=ui_roi)
+                    prev = prev_ui_roi_gray.get(table_id)
+                    if prev is not None:
+                        score = _roi_change_score(prev, gray)
+                        if score >= ui_threshold and st.get("pending_trigger") == "unknown":
+                            st["pending_trigger"] = "ui_change"
+                            if self.ethical_mode:
+                                st["pending_post_action"] = True
+                    prev_ui_roi_gray[table_id] = gray
 
-                vision_res = self.vision.parse(pil_img)
-                merged = merge_partial_state(None, vision_res)
+                try:
+                    vision_res = self.vision.parse(pil_img)
+                except Exception:
+                    continue
+                try:
+                    merged = merge_partial_state(None, vision_res)
+                except (ValueError, StateValidationError):
+                    continue
+                except Exception:
+                    continue
 
                 if not isinstance(merged.merged_state, PokerGameState):
                     continue
@@ -421,7 +562,10 @@ class LiveRTA:
                     continue
 
                 if not state_changed:
-                    continue
+                    if self.ethical_mode and bool(st.get("pending_post_action")):
+                        state_changed = True
+                    else:
+                        continue
 
                 if self.ethical_mode and not bool(st.get("pending_post_action")):
                     msg = "Waiting for your action..."
@@ -452,6 +596,7 @@ class LiveRTA:
                 meta = Meta.model_validate(
                     {
                         **self.cfg.meta,
+                        "source": "simulator" if self.test_mode else self.cfg.meta.get("source", "unknown"),
                         "is_realtime": True,
                         "post_action": bool(st.get("pending_post_action")) if self.ethical_mode else False,
                         "trigger": st.get("pending_trigger"),
