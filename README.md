@@ -383,6 +383,55 @@ python tools/instant_review_tracker.py --config tools/config.yaml
 
 4) Чтобы «зафиксировать действие» и получить подсказку, нажмите **Enter** в консоли (hotkey trigger).
 
+### Live RTA (локальный live-цикл поверх VisionAdapter)
+
+В проект добавлен локальный live-режим `coach_app.rta.live_rta`, который:
+
+- периодически **захватывает экран**
+- извлекает состояние через `LiveVisionAdapter`
+- валидирует состояние и запускает **детерминированный движок** (Range Model v0 + Postflop Line Logic v2)
+- выводит объяснение в `console` / `overlay` / `telegram`
+
+#### Важно про ethics
+
+По умолчанию `--ethical` включён: вывод происходит **только после события post-action**.
+Post-action можно зафиксировать:
+
+- по детектору изменений UI (absdiff между кадрами)
+- вручную: нажать **Enter** в консоли (hotkey)
+
+#### Quickstart
+
+1) Установите зависимости live-режима:
+
+```bash
+pip install -e ".[live]"
+```
+
+2) Запуск (можно передать **adapter config** напрямую):
+
+```bash
+python -m coach_app.rta.live_rta --config coach_app/configs/adapters/pokerstars_live.yaml --mode console
+```
+
+3) Overlay режим (PyQt5):
+
+```bash
+python -m coach_app.rta.live_rta --config coach_app/configs/adapters/pokerstars_live.yaml --mode overlay
+```
+
+4) Telegram режим (нужны настройки `telegram.bot_token/chat_id`):
+
+```bash
+python -m coach_app.rta.live_rta --config coach_app/configs/adapters/pokerstars_live.yaml --mode telegram
+```
+
+5) Если вам нужно отключить post-action gating (НЕ рекомендуется):
+
+```bash
+python -m coach_app.rta.live_rta --config coach_app/configs/adapters/pokerstars_live.yaml --mode console --no-ethical
+```
+
 ### Dev ergonomics
 
 - **Tests**:
