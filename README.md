@@ -73,6 +73,43 @@ python -m pip install -U pip
 pip install -e ".[dev]"
 ```
 
+- **Tesseract OCR (Windows)**:
+
+1) Скачайте и установите Tesseract OCR:
+
+- https://github.com/tesseract-ocr/tesseract
+
+2) Добавьте папку установки Tesseract в `PATH`.
+
+Пример пути (может отличаться):
+
+- `C:\Program Files\Tesseract-OCR`
+
+- **Live (vision dependencies)**:
+
+```bash
+pip install -e ".[live]"
+```
+
+Опционально (fallback-автоматизация, может требовать доп. зависимостей/права доступа в Windows):
+
+```bash
+pip install -e ".[live_fallback]"
+```
+
+Примечание (Windows): если `pip install -e ...` падает на шаге `build_editable` (PEP660), используйте обходной путь:
+
+```bash
+pip install .
+pip install opencv-python pytesseract mss keyboard pyqt5
+```
+
+Либо попробуйте compat-режим editable (если поддерживается вашим pip/setuptools):
+
+```bash
+pip install -e . --config-settings editable_mode=compat
+```
+
 - **Run API**:
 
 ```bash

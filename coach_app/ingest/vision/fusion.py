@@ -8,7 +8,12 @@ from coach_app.ingest.vision.base import VisionParseResult
 from coach_app.schemas.blackjack import BlackjackState
 from coach_app.schemas.common import Card, Confidence, Street
 from coach_app.schemas.poker import PokerGameState, PokerGameType
-from coach_app.state.validate import StateValidationError, validate_blackjack_state, validate_poker_state
+from coach_app.state.validate import (
+    StateValidationError,
+    validate_blackjack_state,
+    validate_poker_state,
+    validate_vision_confidence_map,
+)
 
 
 class MergedStateResult(BaseModel):
@@ -29,6 +34,8 @@ def merge_partial_state(
 ) -> MergedStateResult:
     partial = dict(vision_result.partial_state or {})
     warnings: list[str] = list(vision_result.warnings or [])
+
+    warnings.extend(validate_vision_confidence_map(vision_result.confidence_map))
 
     used_conf: list[float] = []
 

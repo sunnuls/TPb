@@ -8,6 +8,32 @@ from coach_app.schemas.common import Card
 from coach_app.schemas.poker import PokerGameState
 
 
+def validate_vision_confidence_map(
+    confidence_map: dict[str, float] | None,
+    *,
+    default_threshold: float = 0.8,
+) -> list[str]:
+    warnings: list[str] = []
+    if not confidence_map:
+        return warnings
+
+    for k, v in confidence_map.items():
+        try:
+            fv = float(v)
+        except Exception:
+            warnings.append(f"Vision confidence: поле '{k}' имеет некорректное значение")
+            continue
+
+        if not (0.0 <= fv <= 1.0):
+            warnings.append(f"Vision confidence: поле '{k}' вне диапазона 0..1")
+            continue
+
+        if fv < float(default_threshold):
+            warnings.append(f"Vision confidence низкая для '{k}': {fv:.2f} < {float(default_threshold):.2f}")
+
+    return warnings
+
+
 @dataclass(frozen=True)
 class ValidationErrorDetail:
     code: str

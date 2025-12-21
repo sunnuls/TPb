@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -49,6 +50,14 @@ class PokerScreenshotAnalyzeResponse(BaseModel):
 
 
 def get_poker_vision_adapter() -> VisionAdapter:
+    adapter = (os.getenv("COACH_VISION_ADAPTER") or "generic").strip().lower()
+    if adapter in ("live_opencv", "live"):
+        from coach_app.adapters.vision.live_adapter import LiveVisionAdapter
+
+        cfg = os.getenv("COACH_VISION_CONFIG")
+        if not cfg:
+            cfg = "coach_app/configs/adapters/pokerstars_live.yaml"
+        return LiveVisionAdapter(config_path=cfg)
     return GenericVisionAdapter(game="poker")
 
 

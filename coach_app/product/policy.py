@@ -10,6 +10,16 @@ from coach_app.schemas.common import Street
 from coach_app.schemas.meta import Meta
 
 
+LIVE_RTA_ENABLED = False
+
+
+LIVE_RTA_ETHICS_WARNING = (
+    "Этическое предупреждение: помощь в реальном времени (RTA) в покер-румах может нарушать правила "
+    "платформ и принципы честной игры. Держите LIVE_RTA отключённым по умолчанию и используйте "
+    "только в разрешённых сценариях (например, симуляторы, повторы, обучение после действия)."
+)
+
+
 class PolicyReason(str, Enum):
     OK = "ok"
     REALTIME_POKER_ROOM_BLOCK = "realtime_poker_room_block"
