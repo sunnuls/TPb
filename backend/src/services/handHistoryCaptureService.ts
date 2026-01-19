@@ -60,11 +60,14 @@ export class HandHistoryCaptureService extends EventEmitter {
   startHand(gameState: GameState): void {
     logger.info('Starting hand capture');
 
+    // Find hero's cards from players
+    const heroCards = gameState.players.find(p => p.holeCards)?.holeCards || [];
+
     this.currentHand = {
       id: this.generateHandId(),
       timestamp: new Date(),
       gameType: 'holdem',
-      heroCards: gameState.holeCards || [],
+      heroCards: heroCards,
       board: [],
       pot: 0,
       actions: [],
@@ -160,23 +163,33 @@ export class HandHistoryCaptureService extends EventEmitter {
    */
   async importHand(rawText: string): Promise<CapturedHand | null> {
     try {
-      const parsed = this.parser.parseHand(rawText);
+      const parsed = this.parser.parseHandHistory(rawText);
 
       if (!parsed) {
         logger.error('Failed to parse hand history');
         return null;
       }
 
+      // Find hero in players
+      const hero = parsed.players.find(p => p.holeCards);
+      
+      // Convert board object to array
+      const boardCards: Card[] = [
+        ...(parsed.board.flop || []),
+        ...(parsed.board.turn ? [parsed.board.turn] : []),
+        ...(parsed.board.river ? [parsed.board.river] : []),
+      ];
+
       const hand: CapturedHand = {
         id: parsed.handId || this.generateHandId(),
         timestamp: parsed.timestamp,
         site: parsed.site,
         gameType: parsed.gameType,
-        stakes: `${parsed.smallBlind}/${parsed.bigBlind}`,
-        heroName: parsed.heroName || 'Hero',
-        heroPosition: parsed.heroPosition || 'BTN',
-        heroCards: parsed.heroCards || [],
-        board: parsed.board,
+        stakes: `${parsed.stakes.smallBlind}/${parsed.stakes.bigBlind}`,
+        heroName: hero?.name || 'Hero',
+        heroPosition: hero?.position || 'BTN',
+        heroCards: hero?.holeCards || [],
+        board: boardCards,
         pot: parsed.pot,
         actions: parsed.actions,
         raw: rawText,
@@ -207,19 +220,29 @@ export class HandHistoryCaptureService extends EventEmitter {
       let imported = 0;
 
       for (const parsed of hands) {
+        // Find hero in players
+        const hero = parsed.players.find(p => p.holeCards);
+        
+        // Convert board object to array
+        const boardCards: Card[] = [
+          ...(parsed.board.flop || []),
+          ...(parsed.board.turn ? [parsed.board.turn] : []),
+          ...(parsed.board.river ? [parsed.board.river] : []),
+        ];
+
         const hand: CapturedHand = {
           id: parsed.handId || this.generateHandId(),
           timestamp: parsed.timestamp,
           site: parsed.site,
           gameType: parsed.gameType,
-          stakes: `${parsed.smallBlind}/${parsed.bigBlind}`,
-          heroName: parsed.heroName || 'Hero',
-          heroPosition: parsed.heroPosition || 'BTN',
-          heroCards: parsed.heroCards || [],
-          board: parsed.board,
+          stakes: `${parsed.stakes.smallBlind}/${parsed.stakes.bigBlind}`,
+          heroName: hero?.name || 'Hero',
+          heroPosition: hero?.position || 'BTN',
+          heroCards: hero?.holeCards || [],
+          board: boardCards,
           pot: parsed.pot,
           actions: parsed.actions,
-          raw: parsed.rawText || '',
+          raw: '',
         };
 
         this.capturedHands.push(hand);

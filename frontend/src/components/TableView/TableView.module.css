@@ -2,56 +2,156 @@
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 1rem;
+  padding-bottom: 0;
+  position: relative;
 }
 
-.pot {
+.pokerTable {
+  width: 100%;
+  max-width: 800px;
+  height: 380px;
+  background: linear-gradient(135deg, #1a5f3f 0%, #0d3d27 100%);
+  border-radius: 180px;
+  border: 8px solid #8b4513;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    inset 0 0 100px rgba(0, 0, 0, 0.3);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* Board Area - Center of table */
+.boardArea {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
   z-index: 10;
 }
 
 .communityCards {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+}
+
+.potDisplay {
+  margin-top: 1rem;
+}
+
+.streetBadge {
   position: absolute;
-  top: 50%;
+  top: -180px;
   left: 50%;
-  transform: translate(-50%, calc(-50% + 60px));
-  z-index: 5;
+  transform: translateX(-50%);
 }
 
-.streetIndicator {
+/* Opponents Area */
+.opponentsArea {
   position: absolute;
-  top: 20px;
-  right: 20px;
-}
-
-.players {
-  position: relative;
   width: 100%;
   height: 100%;
 }
 
-.playerSlot {
+.opponentCard {
   position: absolute;
   transition: all 0.3s ease;
+  min-width: 140px;
 }
 
-.playerSlot.active {
-  transform: scale(1.05);
+.opponentCard:nth-child(1) {
+  top: 5%;
+  left: 20%;
 }
 
-.playerSlot.folded {
-  opacity: 0.5;
+.opponentCard:nth-child(2) {
+  top: 5%;
+  right: 20%;
 }
 
-.playerSlot:nth-child(1) { top: 10%; left: 50%; transform: translateX(-50%); }
-.playerSlot:nth-child(2) { top: 25%; left: 10%; }
-.playerSlot:nth-child(3) { bottom: 25%; left: 10%; }
-.playerSlot:nth-child(4) { bottom: 10%; left: 30%; }
-.playerSlot:nth-child(5) { bottom: 10%; right: 30%; }
-.playerSlot:nth-child(6) { bottom: 25%; right: 10%; }
-.playerSlot:nth-child(7) { top: 25%; right: 10%; }
+.opponentCard:nth-child(3) {
+  top: 35%;
+  left: 5%;
+}
 
+.opponentCard:nth-child(4) {
+  top: 35%;
+  right: 5%;
+}
+
+.opponentCard:nth-child(5) {
+  bottom: 15%;
+  left: 10%;
+}
+
+.foldedPlayer {
+  opacity: 0.4;
+  filter: grayscale(100%);
+}
+
+.activePlayer {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Hero Section - Bottom */
+.heroSection {
+  position: fixed;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 380px;
+  max-width: 450px;
+  z-index: 100;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .pokerTable {
+    max-width: 700px;
+    height: 400px;
+  }
+
+  .heroSection {
+    min-width: 350px;
+    bottom: 10px;
+  }
+
+  .opponentCard {
+    min-width: 150px;
+  }
+}
+
+@media (max-width: 768px) {
+  .pokerTable {
+    max-width: 500px;
+    height: 300px;
+  }
+
+  .heroSection {
+    min-width: 300px;
+  }
+
+  .opponentCard {
+    min-width: 120px;
+  }
+}

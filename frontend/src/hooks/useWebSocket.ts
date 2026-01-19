@@ -5,7 +5,7 @@ import { useGameStore } from '../stores/gameStore';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3000';
 
 export function useWebSocket() {
   const [socket, setSocket] = useState<TypedSocket | null>(null);

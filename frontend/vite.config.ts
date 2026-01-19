@@ -16,5 +16,9 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  optimizeDeps: {
+    include: ['@tpb/shared'],
+    force: true,
+  },
 });
 
