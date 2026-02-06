@@ -1,0 +1,168 @@
+# Generic Simulation Vision Adapter - Simplified
+# Educational Use Only: Multi-agent game theory research
+
+adapter_name: "generic_simulation"
+game_type: "poker"
+
+# ROI Definitions (Пункт 1)
+rois:
+  resources:
+    stack:
+      - x: 50
+        y: 400
+        width: 150
+        height: 40
+        method: "ocr"
+        fallback: "template"
+        confidence_threshold: 0.7
+    
+    pot:
+      - x: 350
+        y: 250
+        width: 120
+        height: 35
+        method: "ocr"
+        fallback: "pattern_match"
+        confidence_threshold: 0.7
+  
+  # Accumulators (Подпункт 1.1: agent metrics)
+  accumulators:
+    engagement_ratio:
+      - x: 800
+        y: 50
+        width: 100
+        height: 30
+        method: "ocr"
+        metric_type: "percentage"
+        confidence_threshold: 0.6
+        fallback_value: 0.5
+    
+    hands_played:
+      - x: 800
+        y: 90
+        width: 80
+        height: 25
+        method: "ocr"
+        metric_type: "counter"
+        confidence_threshold: 0.6
+        fallback_value: 0
+    
+    success_rate:
+      - x: 800
+        y: 130
+        width: 100
+        height: 30
+        method: "ocr"
+        metric_type: "percentage"
+        confidence_threshold: 0.6
+        fallback_value: 0.5
+  
+  # Agent Metrics
+  agent_metrics:
+    position_indicator:
+      - x: 100
+        y: 50
+        width: 60
+        height: 25
+        method: "template"
+        templates: ["BTN", "SB", "BB", "CO", "HJ"]
+        confidence_threshold: 0.8
+    
+    resource_bucket:
+      - x: 200
+        y: 50
+        width: 80
+        height: 25
+        method: "template"
+        templates: ["low", "medium", "high"]
+        confidence_threshold: 0.7
+        fallback_value: "medium"
+  
+  # Cards
+  cards:
+    hero_cards:
+      - x: 300
+        y: 420
+        width: 120
+        height: 80
+        method: "template"
+        confidence_threshold: 0.85
+        fallback: "color_detection"
+    
+    board_cards:
+      - x: 250
+        y: 200
+        width: 400
+        height: 80
+        method: "template"
+        confidence_threshold: 0.85
+        fallback: "color_detection"
+  
+  # Actions (simplified)
+  actions:
+    fold_button:
+      - x: 250
+        y: 500
+        width: 100
+        height: 40
+    
+    call_button:
+      - x: 370
+        y: 500
+        width: 100
+        height: 40
+    
+    raise_button:
+      - x: 490
+        y: 500
+        width: 100
+        height: 40
+
+# OCR Configuration
+ocr_config:
+  engine: "tesseract"
+  synthetic_mode:
+    enabled: true
+    noise_level: 0.05
+    confidence_variation: 0.1
+
+# Fallback Models (Подпункт 1.1)
+fallback_models:
+  low_confidence_threshold: 0.6
+  strategies:
+    template_matching:
+      enabled: true
+    pattern_recognition:
+      enabled: true
+
+# Output Simulation (Подпункт 1.2)
+output_simulation:
+  enabled: true
+  pyautogui_config:
+    delay:
+      enabled: true
+      min_seconds: 0.5
+      max_seconds: 2.0
+      distribution: "uniform"
+    
+    mouse_movement:
+      enabled: true
+      curved_path:
+        enabled: true
+        control_points: 3
+        deviation: 50
+        jitter: 5
+  
+  actions:
+    fold:
+      target_roi: "fold_button"
+      confirmation_wait: 0.3
+    
+    check_call:
+      target_roi: "call_button"
+      confirmation_wait: 0.3
+    
+    bet_raise:
+      target_roi: "raise_button"
+      confirmation_wait: 0.3
+      requires_sizing: true

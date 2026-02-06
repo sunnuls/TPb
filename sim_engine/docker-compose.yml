@@ -1,0 +1,140 @@
+# Multi-Agent Simulation Research Framework - Docker Compose
+# Educational Use Only: Orchestrates multi-agent research simulations
+# for studying coordination patterns in game theory contexts.
+
+version: '3.8'
+
+services:
+  # Central Hub - Coordination server for agent synchronization
+  central-hub:
+    build:
+      context: ..
+      dockerfile: sim_engine/Dockerfile
+    container_name: sim_central_hub
+    environment:
+      - SIM_MODE=research
+      - CENTRAL_HUB_HOST=0.0.0.0
+      - CENTRAL_HUB_PORT=8765
+      - ENCRYPTION_ENABLED=true
+      - LOG_LEVEL=INFO
+      - MAX_AGENTS=100
+    ports:
+      - "8765:8765"
+      - "8000:8000"
+    networks:
+      - sim_network
+    volumes:
+      - ./logs:/app/logs
+      - ./results:/app/results
+      - ./configs:/app/configs:ro
+    command: python -m sim_engine.central_hub
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost',8765)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Agent Pool - Scalable research agents (Подпункт 1.1: scaling to 100 agents)
+  agent-pool:
+    build:
+      context: ..
+      dockerfile: sim_engine/Dockerfile
+    environment:
+      - SIM_MODE=research
+      - CENTRAL_HUB_HOST=central-hub
+      - CENTRAL_HUB_PORT=8765
+      - AGENT_COUNT=${AGENT_COUNT:-10}
+      - BEHAVIOR_TYPE=${BEHAVIOR_TYPE:-balanced}
+      - SIMULATION_DURATION=${SIMULATION_DURATION:-3600}
+      - LOG_LEVEL=INFO
+      - REGION=${REGION:-us-east-1}
+    networks:
+      - sim_network
+    volumes:
+      - ./logs:/app/logs
+      - ./results:/app/results
+      - ./configs:/app/configs:ro
+    command: python -m sim_engine.orchestrator
+    restart: on-failure
+    depends_on:
+      central-hub:
+        condition: service_healthy
+    deploy:
+      replicas: ${REPLICA_COUNT:-2}
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Redis - State caching for multi-agent coordination (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: sim_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - sim_network
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-research_sim_2026}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Prometheus - Metrics collection (Шаг 4.2 preparation)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sim_prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - sim_network
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    restart: unless-stopped
+
+  # Grafana - Visualization dashboard (Шаг 4.2 preparation)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sim_grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - sim_network
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-research_sim}
+      - GF_INSTALL_PLUGINS=redis-datasource
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+networks:
+  sim_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  redis_data:
+  prometheus_data:
+  grafana_data:

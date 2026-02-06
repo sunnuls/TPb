@@ -272,10 +272,46 @@ class LiveRTA:
         test_mode: bool = False,
         manual_start: bool = False,
         control_overlay: bool = False,
+        simulation_mode: bool = False,
     ) -> None:
+        """
+        Initialize LiveRTA engine.
+        
+        Args:
+            config_path: Path to configuration YAML
+            output_mode: Output destination ("console" | "overlay" | "telegram")
+            ethical_mode: Enable instant review policy (wait for action before advice)
+            test_mode: Enable test mode
+            manual_start: Require manual arming
+            control_overlay: Show control UI overlay
+            simulation_mode: Enable continuous simulation loops for research.
+                             When True, disables ethical constraints for virtual
+                             environment testing. Educational use only.
+        
+        Educational Note:
+            simulation_mode is designed exclusively for multi-agent game theory
+            research in controlled virtual environments. It removes ethical
+            constraints to enable continuous decision loops for academic study.
+            
+            When simulation_mode=True:
+            - ethical_mode is automatically disabled
+            - post_action delays are removed
+            - instant review policy bypassed
+            - continuous decision loops enabled
+            
+            This mode should ONLY be used in isolated simulation environments,
+            never in real-money or production gaming contexts.
+        """
         self.config_path = Path(config_path)
         self.output_mode: OutputMode = output_mode
-        self.ethical_mode = bool(ethical_mode)
+        
+        # Simulation mode overrides ethical mode for research environments
+        self.simulation_mode = bool(simulation_mode)
+        if self.simulation_mode:
+            self.ethical_mode = False  # No ethical constraints in virtual simulations
+        else:
+            self.ethical_mode = bool(ethical_mode)
+        
         self.test_mode = bool(test_mode)
         self.manual_start = bool(manual_start)
         self.control_overlay = bool(control_overlay)
@@ -477,7 +513,8 @@ class LiveRTA:
 
         prev_ui_roi_gray: dict[str, bytes | None] = {}
 
-        post_enabled = bool(self.cfg.post_action_change.get("enabled", self.ethical_mode))
+        # Simulation mode: disable post-action detection for continuous loops
+        post_enabled = bool(self.cfg.post_action_change.get("enabled", self.ethical_mode)) and not self.simulation_mode
         post_roi = self.cfg.post_action_change.get("roi")
         post_threshold = float(self.cfg.post_action_change.get("threshold", 18.0))
         prev_post_gray: dict[str, bytes | None] = {}
@@ -567,7 +604,8 @@ class LiveRTA:
                     else:
                         continue
 
-                if self.ethical_mode and not bool(st.get("pending_post_action")):
+                # Simulation mode: skip post-action wait (continuous loop for research)
+                if self.ethical_mode and not self.simulation_mode and not bool(st.get("pending_post_action")):
                     msg = "Waiting for your action..."
                     if self.output_mode == "overlay":
                         if st.get("last_status") != msg:
@@ -596,26 +634,36 @@ class LiveRTA:
                 meta = Meta.model_validate(
                     {
                         **self.cfg.meta,
-                        "source": "simulator" if self.test_mode else self.cfg.meta.get("source", "unknown"),
+                        "source": "simulator" if (self.test_mode or self.simulation_mode) else self.cfg.meta.get("source", "unknown"),
                         "is_realtime": True,
                         "post_action": bool(st.get("pending_post_action")) if self.ethical_mode else False,
-                        "trigger": st.get("pending_trigger"),
+                        "trigger": st.get("pending_trigger") if not self.simulation_mode else "continuous_simulation",
                         "frame_id": f"live_{table_id}_{int(time.time()*1000)}",
                         "session_id": self.session_id,
+                        "simulation_mode": self.simulation_mode,
                     }
                 )
 
                 from coach_app.product.policy import enforce_policy
 
-                policy = enforce_policy(
-                    ProductMode.INSTANT_REVIEW if self.ethical_mode else ProductMode.LIVE_RTA,
-                    "poker",
-                    {"state": state},
-                    meta,
-                    global_conf,
-                )
-                if not policy.allowed:
-                    msg = str(policy.message)
+                # Simulation mode: bypass policy enforcement for continuous research loops
+                if self.simulation_mode:
+                    # In simulation mode, always allow analysis (no ethical constraints)
+                    policy_allowed = True
+                    policy_message = None
+                else:
+                    policy = enforce_policy(
+                        ProductMode.INSTANT_REVIEW if self.ethical_mode else ProductMode.LIVE_RTA,
+                        "poker",
+                        {"state": state},
+                        meta,
+                        global_conf,
+                    )
+                    policy_allowed = policy.allowed
+                    policy_message = policy.message
+                
+                if not policy_allowed:
+                    msg = str(policy_message)
                     if st.get("last_status") != msg:
                         if self.output_mode == "overlay":
                             self._get_overlay().show(msg, table_id=table_id, anchor_rect=anchor_rect)
@@ -660,16 +708,56 @@ class LiveRTA:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True)
-    ap.add_argument("--mode", default="console", choices=["console", "overlay", "telegram"])
+    """
+    Main entry point for LiveRTA.
+    
+    Educational Note:
+        The --simulation flag is provided for game theory research and
+        educational simulations in controlled virtual environments only.
+        It disables ethical constraints to enable continuous decision loops
+        for academic study. Should NEVER be used in real-money contexts.
+    """
+    ap = argparse.ArgumentParser(
+        description="LiveRTA: Real-time poker decision engine with simulation support for research"
+    )
+    ap.add_argument("--config", required=True, help="Path to configuration YAML")
+    ap.add_argument("--mode", default="console", choices=["console", "overlay", "telegram"],
+                    help="Output mode for decisions")
+    
+    # Ethical mode group
     g = ap.add_mutually_exclusive_group()
-    g.add_argument("--ethical", dest="ethical", action="store_true")
-    g.add_argument("--no-ethical", dest="ethical", action="store_false")
+    g.add_argument("--ethical", dest="ethical", action="store_true",
+                   help="Enable instant review mode (wait for action)")
+    g.add_argument("--no-ethical", dest="ethical", action="store_false",
+                   help="Disable instant review (continuous advice)")
     ap.set_defaults(ethical=True)
+    
+    # Simulation mode (educational/research only)
+    ap.add_argument("--simulation", dest="simulation", action="store_true",
+                    help="[RESEARCH ONLY] Enable continuous simulation loops for virtual environments. "
+                         "Disables ethical constraints. Educational use only.")
+    
     args = ap.parse_args(argv)
+    
+    # Warning for simulation mode
+    if args.simulation:
+        print("=" * 70)
+        print("WARNING: Simulation mode enabled")
+        print("=" * 70)
+        print("This mode is designed exclusively for game theory research and")
+        print("educational simulations in controlled virtual environments.")
+        print("")
+        print("Ethical constraints are DISABLED to enable continuous decision loops.")
+        print("This mode should NEVER be used in real-money or production contexts.")
+        print("=" * 70)
+        print("")
 
-    rta = LiveRTA(args.config, output_mode=args.mode, ethical_mode=bool(args.ethical))
+    rta = LiveRTA(
+        args.config,
+        output_mode=args.mode,
+        ethical_mode=bool(args.ethical),
+        simulation_mode=bool(args.simulation)
+    )
     rta.start()
     try:
         rta.join()

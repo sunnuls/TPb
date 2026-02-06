@@ -1,0 +1,76 @@
+# Simulation RTA Configuration
+# For Multi-Agent Game Theory Research in Virtual Environments
+#
+# Educational Use Only: This configuration is designed for continuous
+# simulation loops in controlled virtual environments. It disables
+# ethical constraints to enable research on strategic decision-making.
+#
+# DO NOT use this configuration for real-money gaming or production use.
+
+# Vision adapter configuration
+vision_adapter_config: "coach_app/configs/adapters/generic_sim.yaml"
+
+# Frame capture rate (simulations can use higher FPS)
+fps: 2.0  # 2 frames per second for simulation analysis
+
+# Screen region (optional, leave null for full screen)
+region: null
+
+# UI change detection (disabled for simulations - continuous analysis)
+ui_change:
+  enabled: false
+
+# Post-action change detection (disabled for simulations)
+post_action_change:
+  enabled: false  # No waiting for human actions in simulations
+
+# Metadata for simulation tracking
+meta:
+  source: "simulation"
+  environment: "virtual"
+  research_session: "game_theory_study_001"
+  disclaimer: "Educational simulation only - not for real-money use"
+
+# Telegram notifications (optional for simulation monitoring)
+telegram:
+  enabled: false
+  bot_token: ""  # Add if monitoring simulations remotely
+  chat_id: ""
+
+# Multi-table detection (for multi-agent simulations)
+tables:
+  enabled: true
+  title_regex: ".*Simulation.*|.*Virtual.*"  # Match simulation window titles
+  
+# Simulation-specific settings (parsed by LiveRTA simulation_mode)
+simulation:
+  continuous_loop: true
+  bypass_ethical_constraints: true
+  equity_calculation: true  # Enable Monte Carlo equity in decisions
+  opponent_modeling: true   # Track opponent statistics
+  variance_enabled: false   # No variance in base analysis (added by agents)
+  
+  # Agent coordination (for multi-agent mode)
+  coordination:
+    enabled: false  # Set true when using central hub
+    hub_url: "ws://localhost:8765"
+    agent_id: "agent_001"
+    sync_state: true
+  
+  # Logging for research analysis
+  logging:
+    enabled: true
+    log_file: "sim_logs/rta_decisions.jsonl"
+    log_state: true
+    log_equity: true
+    log_reasoning: true
+
+# Educational disclaimer (embedded in all outputs)
+disclaimer: |
+  EDUCATIONAL SIMULATION ONLY
+  
+  This system operates in a controlled virtual environment for
+  game theory research and educational purposes. All decisions
+  are generated for academic study of strategic decision-making.
+  
+  NOT intended for real-money gambling or production use.
