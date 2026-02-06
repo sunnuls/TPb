@@ -41,6 +41,9 @@ class MessageType(str, Enum):
     DECISION_RESPONSE = "decision_response"
     HEARTBEAT = "heartbeat"
     ERROR = "error"
+    # Roadmap2 Phase 2: Card sharing
+    CARD_SHARE = "card_share"
+    COLLECTIVE_EQUITY = "collective_equity"
 
 
 class AgentStateMessage(BaseModel):
@@ -120,9 +123,13 @@ class CentralHub:
         
         # Connected agents
         self.agents: Dict[str, AgentConnection] = {}
+        self._connections = self.agents  # Alias for backward compatibility
         
         # Environment groupings (agents in same simulation environment)
         self.environments: Dict[str, Set[str]] = {}
+        
+        # Roadmap2 Phase 2: Sessions for card sharing
+        self._sessions: Dict[str, Dict[str, Any]] = {}
         
         # Heartbeat configuration
         self.heartbeat_interval = heartbeat_interval
@@ -515,6 +522,129 @@ class CentralHub:
         print(f"Central Hub started on ws://{self.host}:{self.port}")
         print(f"Encryption enabled for secure research data")
         print(f"Ready for multi-agent coordination")
+    
+    async def share_cards(
+        self,
+        environment_id: str,
+        agent_id: str,
+        hole_cards: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Share agent's hole cards with the collective (Roadmap2 Phase 2).
+        
+        When ≥3 agents in a session, they pool their hole cards to calculate
+        collective equity vs dummy opponent and remaining deck.
+        
+        Args:
+            environment_id: Session/table identifier
+            agent_id: Agent sharing cards
+            hole_cards: List of 2 cards (e.g., ["As", "Kh"])
+            
+        Returns:
+            Dict with collective_known_cards, collective_equity, dummy_range
+            
+        Educational Note:
+            This simulates HIVE strategy where multiple agents coordinate
+            by sharing private information to gain collective advantage.
+            For academic study of coordination mechanisms only.
+        """
+        # Get or create session
+        if environment_id not in self._sessions:
+            self._sessions[environment_id] = {}
+        session = self._sessions[environment_id]
+            
+        # Store cards in session
+        if "hole_cards" not in session:
+            session["hole_cards"] = {}
+        session["hole_cards"][agent_id] = hole_cards
+        
+        # Calculate collective knowledge when ≥3 agents
+        agents_in_session = [
+            conn for conn in self._connections.values()
+            if conn.environment_id == environment_id
+        ]
+        
+        if len(agents_in_session) < 3:
+            return None
+            
+        # Collect all known cards
+        collective_cards = []
+        for aid, cards in session["hole_cards"].items():
+            collective_cards.extend(cards)
+            
+        # Calculate equity (simplified for demonstration)
+        equity = self._calculate_collective_equity(
+            collective_cards,
+            environment_id
+        )
+        
+        return {
+            "collective_known_cards": collective_cards,
+            "collective_equity": equity,
+            "dummy_range": session.get("dummy_range", "random"),
+            "agent_count": len(agents_in_session)
+        }
+    
+    def _calculate_collective_equity(
+        self,
+        known_cards: List[str],
+        environment_id: str
+    ) -> float:
+        """
+        Calculate collective equity for HIVE group.
+        
+        Educational simplification:
+        - More known cards = higher equity estimate
+        - Real implementation would use poker equity calculator
+        - For research: studies how information pooling affects decisions
+        
+        Args:
+            known_cards: All cards known to the collective
+            environment_id: Session identifier
+            
+        Returns:
+            Equity percentage (0.0 to 1.0)
+        """
+        session = self._sessions.get(environment_id, {})
+        board = session.get("board", [])
+        
+        # Simplified equity calculation
+        # More known cards + coordinated agents = higher equity
+        base_equity = 0.5
+        card_bonus = len(known_cards) * 0.03  # +3% per known card
+        board_bonus = len(board) * 0.02  # +2% per board card
+        
+        equity = min(0.95, base_equity + card_bonus + board_bonus)
+        
+        return equity
+    
+    async def broadcast_collective_state(
+        self,
+        environment_id: str,
+        collective_data: Dict[str, Any]
+    ) -> None:
+        """
+        Broadcast collective state to all agents in session.
+        
+        Args:
+            environment_id: Session identifier
+            collective_data: Shared state (cards, equity, etc.)
+        """
+        message = {
+            "type": MessageType.COLLECTIVE_EQUITY.value,
+            "environment_id": environment_id,
+            "data": collective_data,
+            "timestamp": time.time()
+        }
+        
+        encrypted_msg = self.encrypt_state(message)
+        
+        for conn in self._connections.values():
+            if conn.environment_id == environment_id:
+                try:
+                    await conn.websocket.send(encrypted_msg)
+                except Exception:
+                    pass  # Agent disconnected
     
     async def stop(self) -> None:
         """Stop the hub server."""
