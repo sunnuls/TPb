@@ -52,3 +52,21 @@ env/
 # Temp
 tmp/
 temp/
+
+# Simulation data (research purposes)
+sim_logs/
+simulation_logs/
+*.sim
+sim_data/
+simulation_results/
+sim_cache/
+simulation_cache/
+sim_configs/*.local.yaml
+sim_configs/*.secret.yaml
+agent_logs/
+orchestrator_logs/
+hub_logs/
+variance_data/
+training_data/sim_*
+*.simulation
+sim_output/

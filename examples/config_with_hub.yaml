@@ -1,0 +1,40 @@
+# LiveRTA Configuration with Central Hub Integration
+# Educational Use Only: For multi-agent game theory research
+
+# Vision adapter configuration
+vision_adapter_config: "coach_app/configs/adapters/pokerstars_live.yaml"
+
+# Hub configuration (Пункт 2, Шаг 2.2)
+hub:
+  enabled: true  # Set to true to enable multi-agent coordination
+  hub_url: "ws://localhost:8765"  # Central hub WebSocket URL
+  agent_id: "research_agent_1"  # Unique agent identifier (auto-generated if omitted)
+  environment_id: "poker_research_env"  # Shared environment for agent grouping
+  timeout: 5.0  # Connection timeout in seconds
+  heartbeat_interval: 30.0  # Heartbeat frequency in seconds
+
+# Meta information
+meta:
+  source: "simulation"
+  product_mode: "research"
+  
+# Frame rate
+fps: 1.0
+
+# UI change detection (disable for simulation mode)
+ui_change:
+  enabled: false
+
+# Post-action detection (disable for simulation mode)
+post_action_change:
+  enabled: false
+
+# Educational Note:
+# When simulation_mode is enabled in LiveRTA:
+# - Agents continuously analyze state (no post-action wait)
+# - Hub coordination allows multiple agents to avoid conflicts
+# - Collective probabilities improve decision accuracy
+# - All data encrypted for secure research
+
+# Usage:
+# python -m coach_app.rta.live_rta --config examples/config_with_hub.yaml --simulation --mode console
