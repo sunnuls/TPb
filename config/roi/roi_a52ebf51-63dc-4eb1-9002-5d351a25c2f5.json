@@ -1,0 +1,17 @@
+{
+  "account_id": "a52ebf51-63dc-4eb1-9002-5d351a25c2f5",
+  "resolution": [
+    1920,
+    1080
+  ],
+  "zones": {
+    "hero_card_1": {
+      "name": "hero_card_1",
+      "x": 325,
+      "y": 28,
+      "width": 60,
+      "height": 42
+    }
+  },
+  "configured_at": null
+}

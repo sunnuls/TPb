@@ -1,0 +1,189 @@
+# Live Bridge Configuration (HCI Research Prototype)
+# Educational use only - for studying external desktop application interfaces
+
+# SAFETY SETTINGS (Phase 0)
+safety:
+  mode: "dry_run"  # dry_run | safe | unsafe (default: dry_run)
+  max_runtime_seconds: 3600  # 1 hour
+  enable_kill_switch: true
+  log_all_decisions: true
+  screenshot_on_action: true
+  emergency_shutdown_on_anomaly: true
+
+# SCREEN CAPTURE SETTINGS (Phase 1)
+screen_capture:
+  # Window identification
+  window_title_pattern: "PokerStars.*"  # Regex pattern for window title
+  process_name: "PokerStars.exe"  # Process name (optional fallback)
+  
+  # Capture settings
+  capture_interval_ms: 500  # Capture every 500ms
+  save_screenshots: false  # Save debug screenshots
+  screenshot_dir: "bridge/debug_screenshots"
+  
+  # Resolution presets
+  supported_resolutions:
+    - "1920x1080"
+    - "1280x720"
+    - "2560x1440"
+
+# ROI (Region of Interest) PRESETS (Phase 1)
+roi_presets:
+  # Room-specific ROI configurations
+  # Format: room_name -> resolution -> roi_zones
+  
+  # Example: PokerStars 6-max NL Hold'em
+  pokerstars_6max:
+    "1920x1080":
+      # Hero cards
+      hero_cards:
+        x: 860
+        y: 820
+        width: 200
+        height: 80
+      
+      # Board cards
+      board:
+        x: 660
+        y: 380
+        width: 600
+        height: 100
+      
+      # Pot size
+      pot:
+        x: 900
+        y: 450
+        width: 120
+        height: 40
+      
+      # Hero stack
+      hero_stack:
+        x: 860
+        y: 900
+        width: 120
+        height: 30
+      
+      # Opponent stacks (6-max positions)
+      stacks:
+        - {name: "seat1", x: 500, y: 200, width: 100, height: 25}
+        - {name: "seat2", x: 1200, y: 200, width: 100, height: 25}
+        - {name: "seat3", x: 1400, y: 500, width: 100, height: 25}
+        - {name: "seat4", x: 1200, y: 700, width: 100, height: 25}
+        - {name: "seat5", x: 500, y: 700, width: 100, height: 25}
+        - {name: "seat6", x: 300, y: 500, width: 100, height: 25}
+      
+      # Action buttons
+      buttons:
+        fold: {x: 700, y: 950, width: 100, height: 40}
+        check: {x: 820, y: 950, width: 100, height: 40}
+        call: {x: 820, y: 950, width: 100, height: 40}
+        bet: {x: 940, y: 950, width: 100, height: 40}
+        raise: {x: 940, y: 950, width: 100, height: 40}
+      
+      # Metadata
+      stage_indicator:
+        x: 960
+        y: 350
+        width: 80
+        height: 30
+      
+      # Table type indicator
+      table_type:
+        x: 100
+        y: 50
+        width: 200
+        height: 30
+    
+    "1280x720":
+      # Scaled down for 720p
+      hero_cards:
+        x: 573
+        y: 547
+        width: 133
+        height: 53
+      
+      board:
+        x: 440
+        y: 253
+        width: 400
+        height: 67
+      
+      pot:
+        x: 600
+        y: 300
+        width: 80
+        height: 27
+
+# LOBBY SCANNER SETTINGS (Phase 3)
+lobby:
+  scan_interval_seconds: 5
+  max_tables_to_scan: 50
+  lobby_window_pattern: "PokerStars Lobby.*"
+  
+  # Lobby ROI (for table list)
+  roi:
+    table_list:
+      x: 50
+      y: 100
+      width: 800
+      height: 600
+    
+    filters:
+      x: 50
+      y: 50
+      width: 300
+      height: 40
+
+# EXTERNAL HUB SETTINGS (Phase 4)
+external_hub:
+  enabled: false  # Disabled by default in dry-run
+  host: "localhost"
+  port: 8765
+  use_encryption: true
+  shared_secret: ""  # Set via environment variable
+  reconnect_interval_seconds: 10
+  heartbeat_interval_seconds: 30
+
+# ACTION LAYER SETTINGS (Phase 5)
+actions:
+  # Humanization parameters
+  humanization:
+    min_delay_ms: 500
+    max_delay_ms: 2000
+    mouse_speed_pixels_per_second: 1000
+    add_random_variance: true
+    variance_percent: 20
+  
+  # Allowed actions per mode
+  allowed_by_mode:
+    dry_run: []  # No real actions
+    safe: ["fold", "check", "call"]  # Conservative only
+    unsafe: ["fold", "check", "call", "bet", "raise", "all_in"]  # All
+
+# MONITORING SETTINGS (Phase 6)
+monitoring:
+  ui_change_detection: true
+  screenshot_before_action: true
+  screenshot_after_action: true
+  log_rotation_mb: 100
+  alert_on_anomaly: true
+  
+  # Anomaly thresholds
+  anomalies:
+    max_consecutive_errors: 5
+    max_ui_change_detections: 3
+    max_failed_state_extractions: 10
+
+# LOGGING
+logging:
+  level: "INFO"  # DEBUG | INFO | WARNING | ERROR
+  file: "bridge/logs/bridge.log"
+  console: true
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# EDUCATIONAL DISCLAIMER
+disclaimer: |
+  This configuration is for HCI research prototype only.
+  Real-world use is PROHIBITED without proper authorization.
+  All operations default to DRY-RUN mode.
+  Educational use only - studying external application interfaces.

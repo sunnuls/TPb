@@ -1,0 +1,29 @@
+# Launcher Application Requirements (Roadmap6)
+
+# GUI frameworks
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0
+customtkinter>=5.2.0
+
+# Input/capture
+pyautogui>=0.9.54
+mss>=9.0.1
+
+# Image processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+
+# OCR
+pytesseract>=0.3.10
+
+# System integration
+pynput>=1.7.6
+# keyboard>=0.13.5  # Optional: Has issues on Windows (SyntaxError: null bytes) - disabled
+pywin32>=306; sys_platform == 'win32'
+
+# Utilities
+pyyaml>=6.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

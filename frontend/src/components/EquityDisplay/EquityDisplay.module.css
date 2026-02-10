@@ -1,0 +1,7 @@
+.equityDisplay {
+  @apply bg-gray-900 rounded-lg p-4;
+}
+
+.equityDisplay h3 {
+  @apply text-lg font-bold text-white mb-3;
+}

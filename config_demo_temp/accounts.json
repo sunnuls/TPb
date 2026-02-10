@@ -1,0 +1,58 @@
+{
+  "accounts": [
+    {
+      "account_id": "b9dbc1d2-8416-40c5-9ffc-f499421c1868",
+      "nickname": "TestBot001",
+      "status": "ready",
+      "window_info": {
+        "window_id": "12345",
+        "window_title": "PokerStars - Table 1",
+        "window_type": "desktop_client",
+        "process_name": "PokerStars.exe",
+        "position": [
+          100,
+          100,
+          800,
+          600
+        ]
+      },
+      "roi_configured": true,
+      "bot_running": false,
+      "room": "pokerstars",
+      "notes": ""
+    },
+    {
+      "account_id": "bddc07d5-cafc-4bd2-b018-8da02bdbc9da",
+      "nickname": "TestBot002",
+      "status": "idle",
+      "window_info": {
+        "window_id": null,
+        "window_title": null,
+        "window_type": "unknown",
+        "process_name": null,
+        "position": null
+      },
+      "roi_configured": false,
+      "bot_running": false,
+      "room": "ignition",
+      "notes": ""
+    },
+    {
+      "account_id": "f5838b5c-1494-4166-8e8a-b5c08699cd31",
+      "nickname": "TestBot003",
+      "status": "idle",
+      "window_info": {
+        "window_id": null,
+        "window_title": null,
+        "window_type": "unknown",
+        "process_name": null,
+        "position": null
+      },
+      "roi_configured": false,
+      "bot_running": false,
+      "room": "ggpoker",
+      "notes": ""
+    }
+  ],
+  "count": 3
+}

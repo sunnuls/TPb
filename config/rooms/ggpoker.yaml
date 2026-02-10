@@ -1,0 +1,178 @@
+# GGPoker Room Configuration
+# Resolution: 1920x1080
+# EDUCATIONAL USE ONLY
+
+room_name: "ggpoker"
+resolution: "1920x1080"
+
+# ROI Definitions (modern UI layout)
+rois:
+  # Hero cards (bottom center)
+  hero_card_1:
+    x: 870
+    y: 845
+    width: 75
+    height: 105
+    
+  hero_card_2:
+    x: 965
+    y: 845
+    width: 75
+    height: 105
+  
+  # Board cards (center, slightly higher)
+  board_card_1:
+    x: 710
+    y: 430
+    width: 72
+    height: 98
+    
+  board_card_2:
+    x: 800
+    y: 430
+    width: 72
+    height: 98
+    
+  board_card_3:
+    x: 890
+    y: 430
+    width: 72
+    height: 98
+    
+  board_card_4:
+    x: 980
+    y: 430
+    width: 72
+    height: 98
+    
+  board_card_5:
+    x: 1070
+    y: 430
+    width: 72
+    height: 98
+  
+  # Pot size (top center, modern display)
+  pot:
+    x: 860
+    y: 330
+    width: 210
+    height: 42
+  
+  # Hero stack (bottom with modern UI)
+  hero_stack:
+    x: 860
+    y: 945
+    width: 155
+    height: 32
+  
+  # Villain stacks (6-max typical positions)
+  villain_1_stack:
+    x: 290
+    y: 590
+    width: 125
+    height: 32
+    
+  villain_2_stack:
+    x: 390
+    y: 190
+    width: 125
+    height: 32
+    
+  villain_3_stack:
+    x: 860
+    y: 90
+    width: 125
+    height: 32
+    
+  villain_4_stack:
+    x: 1310
+    y: 190
+    width: 125
+    height: 32
+    
+  villain_5_stack:
+    x: 1410
+    y: 590
+    width: 125
+    height: 32
+  
+  # Action buttons (modern design)
+  fold_button:
+    x: 740
+    y: 1005
+    width: 105
+    height: 42
+    
+  check_button:
+    x: 865
+    y: 1005
+    width: 105
+    height: 42
+    
+  call_button:
+    x: 865
+    y: 1005
+    width: 105
+    height: 42
+    
+  raise_button:
+    x: 990
+    y: 1005
+    width: 105
+    height: 42
+  
+  # Bet amount field (modern slider style)
+  bet_amount_field:
+    x: 865
+    y: 962
+    width: 105
+    height: 32
+
+# Visual characteristics (modern GGPoker colors)
+colors:
+  table_felt: [40, 95, 70]  # Modern green
+  card_back: [35, 60, 105]
+  button_active: [255, 215, 60]  # Gold
+  button_inactive: [85, 85, 85]
+
+# OCR settings (clean modern fonts)
+ocr:
+  pot_prefix: ""
+  bet_prefix: ""
+  stack_suffix: ""
+  decimal_separator: "."
+  thousands_separator: ","
+
+# Card recognition (modern card design)
+cards:
+  rank_height: 21
+  suit_height: 17
+  rank_y_offset: 11
+  suit_y_offset: 36
+
+# Metadata (modern UI indicators)
+metadata:
+  table_type_indicator:
+    x: 95
+    y: 48
+    width: 155
+    height: 32
+  
+  street_indicator:
+    x: 860
+    y: 390
+    width: 210
+    height: 32
+  
+  # GGPoker specific features
+  tournament_info:
+    x: 100
+    y: 100
+    width: 200
+    height: 40
+    
+  time_bank:
+    x: 870
+    y: 800
+    width: 80
+    height: 25

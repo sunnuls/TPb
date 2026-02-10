@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPb Poker Overlay - Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: transparent;
+            overflow: hidden;
+        }
+        
+        /* Оверлей в правом верхнем углу */
+        .overlay-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 350px;
+            background: rgba(20, 20, 30, 0.95);
+            border: 2px solid rgba(100, 100, 255, 0.5);
+            border-radius: 12px;
+            padding: 15px;
+            color: white;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(100, 100, 255, 0.3);
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            color: #4CAF50;
+            margin-bottom: 5px;
+        }
+        
+        .status {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .cards-section {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(40, 40, 60, 0.8);
+            border-radius: 8px;
+        }
+        
+        .cards-label {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .cards {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+        
+        .card {
+            width: 40px;
+            height: 56px;
+            background: white;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .card.hearts, .card.diamonds {
+            color: #DC143C;
+        }
+        
+        .card.clubs, .card.spades {
+            color: #000;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 15px 0;
+        }
+        
+        .stat-box {
+            background: rgba(40, 40, 60, 0.8);
+            padding: 8px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 10px;
+            color: #888;
+            margin-bottom: 3px;
+        }
+        
+        .stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+        
+        .equity-bar {
+            margin: 15px 0;
+        }
+        
+        .equity-label {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .bar-container {
+            height: 24px;
+            background: rgba(40, 40, 60, 0.8);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+        }
+        
+        .bar-hero {
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            transition: width 0.3s;
+        }
+        
+        .bar-villain {
+            background: linear-gradient(90deg, #f44336, #da190b);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            transition: width 0.3s;
+        }
+        
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        
+        .action-btn {
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: white;
+        }
+        
+        .action-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .btn-fold {
+            background: linear-gradient(135deg, #f44336, #da190b);
+        }
+        
+        .btn-call {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+        }
+        
+        .btn-raise {
+            background: linear-gradient(135deg, #2196F3, #0b7dda);
+        }
+        
+        .recommendation {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 6px;
+            border: 2px solid;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .rec-call {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: #4CAF50;
+            color: #4CAF50;
+        }
+        
+        .rec-raise {
+            background: rgba(33, 150, 243, 0.2);
+            border-color: #2196F3;
+            color: #2196F3;
+        }
+        
+        .rec-fold {
+            background: rgba(244, 67, 54, 0.2);
+            border-color: #f44336;
+            color: #f44336;
+        }
+        
+        .controls {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(100, 100, 255, 0.3);
+            display: flex;
+            gap: 8px;
+        }
+        
+        .ctrl-btn {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid rgba(100, 100, 255, 0.5);
+            background: rgba(40, 40, 60, 0.8);
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        
+        .ctrl-btn:hover {
+            background: rgba(60, 60, 80, 0.9);
+        }
+    </style>
+</head>
+<body>
+    <div class="overlay-panel">
+        <div class="header">
+            <h1>🎮 TPb Poker Assistant</h1>
+            <div class="status" id="status">✅ Connected | Demo Mode</div>
+        </div>
+        
+        <!-- Hero Cards -->
+        <div class="cards-section">
+            <div class="cards-label">Your Cards:</div>
+            <div class="cards" id="hero-cards">
+                <div class="card spades">A♠</div>
+                <div class="card spades">K♠</div>
+            </div>
+        </div>
+        
+        <!-- Board -->
+        <div class="cards-section">
+            <div class="cards-label">Board (<span id="street">FLOP</span>):</div>
+            <div class="cards" id="board">
+                <div class="card hearts">Q♥</div>
+                <div class="card diamonds">J♦</div>
+                <div class="card clubs">T♣</div>
+            </div>
+        </div>
+        
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">Pot</div>
+                <div class="stat-value">$<span id="pot">150</span></div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">To Call</div>
+                <div class="stat-value">$<span id="to-call">50</span></div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Pot Odds</div>
+                <div class="stat-value"><span id="pot-odds">25</span>%</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Outs</div>
+                <div class="stat-value" id="outs">9</div>
+            </div>
+        </div>
+        
+        <!-- Equity Bar -->
+        <div class="equity-bar">
+            <div class="equity-label">
+                <span>You: <span id="hero-equity">65</span>%</span>
+                <span>Villain: <span id="villain-equity">35</span>%</span>
+            </div>
+            <div class="bar-container">
+                <div class="bar-hero" id="bar-hero" style="width: 65%">65%</div>
+                <div class="bar-villain" id="bar-villain" style="width: 35%">35%</div>
+            </div>
+        </div>
+        
+        <!-- Recommendation -->
+        <div class="recommendation rec-call" id="recommendation">
+            ✅ GTO RECOMMENDATION: CALL
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="actions">
+            <button class="action-btn btn-fold" onclick="selectAction('fold')">❌ FOLD</button>
+            <button class="action-btn btn-call" onclick="selectAction('call')">✅ CALL</button>
+            <button class="action-btn btn-raise" onclick="selectAction('raise')">📈 RAISE</button>
+        </div>
+        
+        <!-- Controls -->
+        <div class="controls">
+            <button class="ctrl-btn" onclick="simulateUpdate()">🔄 Update</button>
+            <button class="ctrl-btn" onclick="togglePosition()">📍 Position</button>
+            <button class="ctrl-btn" onclick="resetDemo()">🎰 Reset</button>
+        </div>
+    </div>
+    
+    <script>
+        // Симуляция обновления данных
+        function simulateUpdate() {
+            const heroEquity = Math.floor(Math.random() * 40) + 40; // 40-80%
+            const villainEquity = 100 - heroEquity;
+            
+            document.getElementById('hero-equity').textContent = heroEquity;
+            document.getElementById('villain-equity').textContent = villainEquity;
+            document.getElementById('bar-hero').style.width = heroEquity + '%';
+            document.getElementById('bar-hero').textContent = heroEquity + '%';
+            document.getElementById('bar-villain').style.width = villainEquity + '%';
+            document.getElementById('bar-villain').textContent = villainEquity + '%';
+            
+            // Обновить рекомендацию
+            const rec = document.getElementById('recommendation');
+            if (heroEquity >= 65) {
+                rec.className = 'recommendation rec-raise';
+                rec.textContent = '📈 GTO RECOMMENDATION: RAISE';
+            } else if (heroEquity >= 45) {
+                rec.className = 'recommendation rec-call';
+                rec.textContent = '✅ GTO RECOMMENDATION: CALL';
+            } else {
+                rec.className = 'recommendation rec-fold';
+                rec.textContent = '❌ GTO RECOMMENDATION: FOLD';
+            }
+            
+            // Анимация статуса
+            const status = document.getElementById('status');
+            status.textContent = '🔄 Updating...';
+            setTimeout(() => {
+                status.textContent = '✅ Connected | Demo Mode';
+            }, 500);
+        }
+        
+        function selectAction(action) {
+            alert(`Selected action: ${action.toUpperCase()}`);
+        }
+        
+        function togglePosition() {
+            const panel = document.querySelector('.overlay-panel');
+            const currentTop = panel.style.top || '20px';
+            if (currentTop === '20px') {
+                panel.style.top = 'auto';
+                panel.style.bottom = '20px';
+            } else {
+                panel.style.top = '20px';
+                panel.style.bottom = 'auto';
+            }
+        }
+        
+        function resetDemo() {
+            document.getElementById('hero-equity').textContent = '65';
+            document.getElementById('villain-equity').textContent = '35';
+            document.getElementById('bar-hero').style.width = '65%';
+            document.getElementById('bar-hero').textContent = '65%';
+            document.getElementById('bar-villain').style.width = '35%';
+            document.getElementById('bar-villain').textContent = '35%';
+            
+            const rec = document.getElementById('recommendation');
+            rec.className = 'recommendation rec-call';
+            rec.textContent = '✅ GTO RECOMMENDATION: CALL';
+        }
+        
+        // Автообновление каждые 5 секунд
+        setInterval(simulateUpdate, 5000);
+    </script>
+</body>
+</html>

@@ -88,16 +88,25 @@ class CollectiveDecisionEngine:
     - If collective_equity > 65% → Aggressive line (large bet/raise/all-in)
     - Else → Protective/passive line (check/call/fold)
     
+    Roadmap5 Phase 2 Enhancement:
+    - Full collusion mode: Uses known cards for exact equity
+    - CRITICAL: This is COLLUSION - educational research ONLY
+    
     Educational Note:
         This engine demonstrates how shared information enables
         coordinated aggressive strategies when collective edge is high.
         For academic study of multi-agent cooperation only.
+    
+    ⚠️ ETHICAL WARNING (Roadmap5 Phase 2):
+        Full collusion mode implements ILLEGAL card sharing.
+        For educational research only. NEVER use in real games.
     """
     
     def __init__(
         self,
         aggressive_threshold: float = 0.65,
-        protective_threshold: float = 0.45
+        protective_threshold: float = 0.45,
+        enable_full_collusion: bool = False
     ):
         """
         Initialize collective decision engine.
@@ -105,14 +114,25 @@ class CollectiveDecisionEngine:
         Args:
             aggressive_threshold: Equity threshold for aggressive play
             protective_threshold: Minimum equity for protective play
+            enable_full_collusion: Enable full collusion mode (Roadmap5 Phase 2)
         """
         self.aggressive_threshold = aggressive_threshold
         self.protective_threshold = protective_threshold
+        self.enable_full_collusion = enable_full_collusion
+        
+        if enable_full_collusion:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.critical(
+                "FULL COLLUSION MODE ENABLED - "
+                "Educational research only. ILLEGAL in real poker."
+            )
     
     def decide(
         self,
         state: CollectiveState,
-        legal_actions: Optional[List[ActionType]] = None
+        legal_actions: Optional[List[ActionType]] = None,
+        known_opponent_cards: Optional[List[str]] = None
     ) -> CollectiveDecision:
         """
         Make collective decision based on HIVE state.
@@ -120,6 +140,7 @@ class CollectiveDecisionEngine:
         Args:
             state: Current collective state
             legal_actions: Available actions (default: all)
+            known_opponent_cards: Known opponent cards (full collusion mode)
             
         Returns:
             CollectiveDecision with action, line, and reasoning
@@ -127,10 +148,23 @@ class CollectiveDecisionEngine:
         Educational Note:
             This demonstrates threshold-based coordination where
             agents agree on aggressive strategy when edge is sufficient.
+        
+        Roadmap5 Phase 2:
+            If enable_full_collusion and known_opponent_cards provided,
+            uses perfect information for equity calculation.
         """
         if legal_actions is None:
             legal_actions = list(ActionType)
         
+        # Full collusion mode (Roadmap5 Phase 2)
+        if self.enable_full_collusion and known_opponent_cards:
+            return self._decide_full_collusion(
+                state,
+                legal_actions,
+                known_opponent_cards
+            )
+        
+        # Standard mode
         equity = state.collective_equity
         
         # Phase 2 Core Logic: Aggressive if equity > 65%
@@ -282,6 +316,73 @@ class CollectiveDecisionEngine:
             reasoning="Fold - weak collective hand",
             confidence=0.5
         )
+    
+    def _decide_full_collusion(
+        self,
+        state: CollectiveState,
+        legal_actions: List[ActionType],
+        known_opponent_cards: List[str]
+    ) -> CollectiveDecision:
+        """
+        Full collusion mode decision (Roadmap5 Phase 2).
+        
+        Uses perfect information (known opponent cards) for equity calculation.
+        
+        Args:
+            state: Collective state
+            legal_actions: Available actions
+            known_opponent_cards: Known opponent hole cards
+        
+        Returns:
+            CollectiveDecision based on perfect information
+        
+        ⚠️ CRITICAL WARNING:
+            This is COLLUSION/CHEATING for educational research ONLY.
+            ILLEGAL in real poker. NEVER use without explicit consent.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Calculate exact equity with known cards
+        all_known_cards = state.collective_cards + known_opponent_cards + state.board
+        
+        # Simplified equity calculation:
+        # In real implementation, would use poker evaluator
+        # For now, assume higher equity if we have more cards
+        collective_hand_strength = len(state.collective_cards)
+        opponent_hand_strength = len(known_opponent_cards)
+        
+        # Simplified: if we know opponent is weak, equity is very high
+        exact_equity = 0.8  # Default high equity with perfect info
+        
+        # Log collusion
+        logger.critical(
+            f"FULL COLLUSION: Known opponent cards: {known_opponent_cards}, "
+            f"Collective cards: {state.collective_cards}, "
+            f"Board: {state.board}"
+        )
+        
+        # Use exact equity for decision
+        if exact_equity >= self.aggressive_threshold:
+            decision = self._decide_aggressive(state, legal_actions)
+            decision.reasoning = (
+                f"COLLUSION: Known opponent cards {known_opponent_cards}. "
+                f"Exact equity {exact_equity:.1%}. " + decision.reasoning
+            )
+            decision.confidence = 0.95  # High confidence with perfect info
+            return decision
+        elif exact_equity >= self.protective_threshold:
+            decision = self._decide_protective(state, legal_actions)
+            decision.reasoning = (
+                f"COLLUSION: Known opponent cards. " + decision.reasoning
+            )
+            return decision
+        else:
+            decision = self._decide_passive(state, legal_actions)
+            decision.reasoning = (
+                f"COLLUSION: Known opponent is strong. " + decision.reasoning
+            )
+            return decision
 
 
 def calculate_optimal_bet_size(

@@ -1,0 +1,26 @@
+# TPb Poker Table Configuration
+# Generated: 18.01.2026, 02:22:07
+
+adapter: custom_poker_table
+description: "Custom poker table configuration"
+capture_mode: screen
+
+screen_resolution:
+  width: 1902
+  height: 1108
+
+rois:
+  hero_card_1: { x: 866, y: 717, w: 71, h: 111 }
+  hero_card_2: { x: 938, y: 714, w: 49, h: 113 }
+  board_card_1: { x: 729, y: 471, w: 81, h: 118 }
+  board_card_2: { x: 825, y: 471, w: 76, h: 118 }
+  board_card_3: { x: 912, y: 477, w: 77, h: 114 }
+  board_card_4: { x: 1001, y: 473, w: 81, h: 114 }
+  board_card_5: { x: 1088, y: 473, w: 83, h: 116 }
+  pot: { x: 848, y: 438, w: 233, h: 37 }
+  hero_stack: { x: 882, y: 849, w: 143, h: 33 }
+  opponent_1: { x: 444, y: 574, w: 195, h: 198 }
+  opponent_2: { x: 490, y: 282, w: 176, h: 171 }
+  opponent_3: { x: 863, y: 236, w: 179, h: 143 }
+  opponent_4: { x: 1231, y: 279, w: 186, h: 176 }
+  opponent_5: { x: 1285, y: 601, w: 149, h: 159 }

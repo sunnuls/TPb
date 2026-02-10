@@ -1,0 +1,87 @@
+{
+  "account_id": "b9dbc1d2-8416-40c5-9ffc-f499421c1868",
+  "resolution": [
+    1920,
+    1080
+  ],
+  "zones": {
+    "hero_card_1": {
+      "name": "hero_card_1",
+      "x": 100,
+      "y": 200,
+      "width": 50,
+      "height": 70
+    },
+    "hero_card_2": {
+      "name": "hero_card_2",
+      "x": 160,
+      "y": 200,
+      "width": 50,
+      "height": 70
+    },
+    "board_card_1": {
+      "name": "board_card_1",
+      "x": 300,
+      "y": 100,
+      "width": 50,
+      "height": 70
+    },
+    "board_card_2": {
+      "name": "board_card_2",
+      "x": 360,
+      "y": 100,
+      "width": 50,
+      "height": 70
+    },
+    "board_card_3": {
+      "name": "board_card_3",
+      "x": 420,
+      "y": 100,
+      "width": 50,
+      "height": 70
+    },
+    "board_card_4": {
+      "name": "board_card_4",
+      "x": 480,
+      "y": 100,
+      "width": 50,
+      "height": 70
+    },
+    "board_card_5": {
+      "name": "board_card_5",
+      "x": 540,
+      "y": 100,
+      "width": 50,
+      "height": 70
+    },
+    "pot": {
+      "name": "pot",
+      "x": 500,
+      "y": 50,
+      "width": 100,
+      "height": 30
+    },
+    "fold_button": {
+      "name": "fold_button",
+      "x": 400,
+      "y": 800,
+      "width": 80,
+      "height": 40
+    },
+    "call_button": {
+      "name": "call_button",
+      "x": 490,
+      "y": 800,
+      "width": 80,
+      "height": 40
+    },
+    "raise_button": {
+      "name": "raise_button",
+      "x": 580,
+      "y": 800,
+      "width": 80,
+      "height": 40
+    }
+  },
+  "configured_at": null
+}

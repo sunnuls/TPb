@@ -1,0 +1,18 @@
+adapter: test_simple
+description: Simple test config
+
+rois:
+  table_region: { x: 0, y: 0, w: 1920, h: 1080 }
+  hero_hole_cards:
+    - { x: 800, y: 900, w: 80, h: 120 }
+    - { x: 900, y: 900, w: 80, h: 120 }
+  board_cards:
+    - { x: 700, y: 450, w: 80, h: 120 }
+    - { x: 790, y: 450, w: 80, h: 120 }
+    - { x: 880, y: 450, w: 80, h: 120 }
+    - { x: 970, y: 450, w: 80, h: 120 }
+    - { x: 1060, y: 450, w: 80, h: 120 }
+  pot_text: { x: 900, y: 600, w: 200, h: 50 }
+
+anchors:
+  table_center: { x: 960, y: 540 }

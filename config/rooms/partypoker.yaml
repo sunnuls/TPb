@@ -1,0 +1,153 @@
+# partypoker Room Configuration
+# Resolution: 1920x1080
+# EDUCATIONAL USE ONLY
+
+room_name: "partypoker"
+resolution: "1920x1080"
+
+rois:
+  hero_card_1:
+    x: 858
+    y: 848
+    width: 82
+    height: 112
+    
+  hero_card_2:
+    x: 962
+    y: 848
+    width: 82
+    height: 112
+  
+  board_card_1:
+    x: 698
+    y: 442
+    width: 74
+    height: 97
+    
+  board_card_2:
+    x: 792
+    y: 442
+    width: 74
+    height: 97
+    
+  board_card_3:
+    x: 886
+    y: 442
+    width: 74
+    height: 97
+    
+  board_card_4:
+    x: 980
+    y: 442
+    width: 74
+    height: 97
+    
+  board_card_5:
+    x: 1074
+    y: 442
+    width: 74
+    height: 97
+  
+  pot:
+    x: 848
+    y: 338
+    width: 215
+    height: 43
+  
+  hero_stack:
+    x: 848
+    y: 952
+    width: 158
+    height: 33
+  
+  villain_1_stack:
+    x: 288
+    y: 588
+    width: 128
+    height: 33
+    
+  villain_2_stack:
+    x: 388
+    y: 188
+    width: 128
+    height: 33
+    
+  villain_3_stack:
+    x: 848
+    y: 88
+    width: 128
+    height: 33
+    
+  villain_4_stack:
+    x: 1318
+    y: 188
+    width: 128
+    height: 33
+    
+  villain_5_stack:
+    x: 1418
+    y: 588
+    width: 128
+    height: 33
+  
+  fold_button:
+    x: 738
+    y: 1008
+    width: 108
+    height: 43
+    
+  check_button:
+    x: 866
+    y: 1008
+    width: 108
+    height: 43
+    
+  call_button:
+    x: 866
+    y: 1008
+    width: 108
+    height: 43
+    
+  raise_button:
+    x: 994
+    y: 1008
+    width: 108
+    height: 43
+  
+  bet_amount_field:
+    x: 866
+    y: 966
+    width: 108
+    height: 33
+
+colors:
+  table_felt: [42, 88, 68]
+  card_back: [36, 58, 108]
+  button_active: [245, 185, 42]
+  button_inactive: [88, 88, 88]
+
+ocr:
+  pot_prefix: "POT:"
+  bet_prefix: ""
+  stack_suffix: ""
+  decimal_separator: "."
+  thousands_separator: ","
+
+cards:
+  rank_height: 21
+  suit_height: 17
+  rank_y_offset: 11
+  suit_y_offset: 37
+
+metadata:
+  table_type_indicator:
+    x: 96
+    y: 46
+    width: 160
+    height: 33
+  
+  street_indicator:
+    x: 848
+    y: 393
+    width: 215
+    height: 33

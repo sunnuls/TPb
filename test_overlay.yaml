@@ -1,0 +1,42 @@
+adapter: test_overlay
+description: "Test overlay config for any poker client"
+
+# Область захвата экрана (весь экран или окно стола)
+rois:
+  # Настройте под ваше разрешение экрана
+  table_region: { x: 0, y: 0, w: 1920, h: 1080 }
+
+  # Координаты ваших карт (настройте позже)
+  hero_hole_cards:
+    - { x: 800, y: 900, w: 80, h: 120 }
+    - { x: 900, y: 900, w: 80, h: 120 }
+
+  # Координаты общих карт на столе
+  board_cards:
+    - { x: 700, y: 450, w: 80, h: 120 }  # flop1
+    - { x: 790, y: 450, w: 80, h: 120 }  # flop2
+    - { x: 880, y: 450, w: 80, h: 120 }  # flop3
+    - { x: 970, y: 450, w: 80, h: 120 }  # turn
+    - { x: 1060, y: 450, w: 80, h: 120 } # river
+
+  # Область отображения банка
+  pot_text: { x: 900, y: 600, w: 200, h: 50 }
+
+  # Стеки игроков
+  stacks:
+    - { x: 320, y: 650, w: 160, h: 40 }
+    - { x: 520, y: 650, w: 160, h: 40 }
+    - { x: 720, y: 650, w: 160, h: 40 }
+    - { x: 920, y: 650, w: 160, h: 40 }
+    - { x: 1120, y: 650, w: 160, h: 40 }
+
+anchors:
+  table_center: { x: 960, y: 540 }
+
+# Настройки оверлея
+overlay:
+  opacity: 0.85
+  position: top_right  # top_left, top_right, bottom_left, bottom_right
+  width: 400
+  height: 600
+  always_on_top: true

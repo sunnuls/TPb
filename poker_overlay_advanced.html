@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPb Poker Overlay - Advanced</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            overflow-x: hidden;
+        }
+        
+        /* Главный контейнер */
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        /* Область захвата экрана */
+        .capture-area {
+            flex: 1;
+            position: relative;
+            background: #0f0f1e;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #captureCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            border: 2px solid #2196F3;
+            cursor: crosshair;
+        }
+        
+        .capture-placeholder {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .capture-placeholder h2 {
+            color: #888;
+            margin-bottom: 20px;
+        }
+        
+        /* Панель управления */
+        .control-panel {
+            width: 380px;
+            background: rgba(20, 20, 35, 0.98);
+            border-left: 2px solid #2196F3;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .panel-section {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(100, 100, 255, 0.2);
+        }
+        
+        .panel-section:last-child {
+            border-bottom: none;
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #2196F3;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* Кнопки */
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #2196F3, #0b7dda);
+            color: white;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #f44336, #da190b);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: rgba(60, 60, 80, 0.8);
+            color: white;
+            border: 1px solid rgba(100, 100, 255, 0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Область рисования зон */
+        .zone-selector {
+            position: absolute;
+            border: 2px solid #4CAF50;
+            background: rgba(76, 175, 80, 0.2);
+            pointer-events: none;
+        }
+        
+        .zone-label {
+            position: absolute;
+            top: -25px;
+            left: 0;
+            background: #4CAF50;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        
+        /* Список зон */
+        .zones-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(40, 40, 60, 0.5);
+            border-radius: 6px;
+            padding: 8px;
+        }
+        
+        .zone-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            margin-bottom: 6px;
+            background: rgba(60, 60, 80, 0.6);
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .zone-name {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .zone-coords {
+            color: #888;
+            font-size: 10px;
+        }
+        
+        .zone-delete {
+            background: #f44336;
+            border: none;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        
+        /* Статус */
+        .status-bar {
+            padding: 10px;
+            background: rgba(40, 40, 60, 0.8);
+            border-radius: 6px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .status-active {
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-inactive {
+            background: #888;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Dropdown для выбора зоны */
+        .zone-type-selector {
+            width: 100%;
+            padding: 10px;
+            background: rgba(60, 60, 80, 0.8);
+            border: 1px solid rgba(100, 100, 255, 0.3);
+            border-radius: 6px;
+            color: white;
+            font-size: 13px;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
+        
+        .zone-type-selector:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        /* Настройки захвата */
+        .capture-mode {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .capture-mode-btn {
+            flex: 1;
+            padding: 10px;
+            background: rgba(60, 60, 80, 0.6);
+            border: 2px solid rgba(100, 100, 255, 0.3);
+            border-radius: 6px;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .capture-mode-btn.active {
+            background: rgba(33, 150, 243, 0.4);
+            border-color: #2196F3;
+        }
+        
+        .capture-mode-btn:hover {
+            border-color: #2196F3;
+        }
+        
+        /* Инструкция */
+        .instructions {
+            background: rgba(33, 150, 243, 0.1);
+            border: 1px solid rgba(33, 150, 243, 0.3);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #aaa;
+        }
+        
+        .instructions strong {
+            color: #2196F3;
+        }
+        
+        /* Координаты курсора */
+        .cursor-coords {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(20, 20, 35, 0.9);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            border: 1px solid rgba(100, 100, 255, 0.3);
+            display: none;
+        }
+        
+        /* Данные карт */
+        .card-data {
+            background: rgba(40, 40, 60, 0.8);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .card-display {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            margin-top: 8px;
+        }
+        
+        .mini-card {
+            width: 32px;
+            height: 44px;
+            background: white;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .mini-card.hearts, .mini-card.diamonds {
+            color: #DC143C;
+        }
+        
+        .mini-card.clubs, .mini-card.spades {
+            color: #000;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(40, 40, 60, 0.3);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 100, 255, 0.5);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 100, 255, 0.7);
+        }
+        
+        /* JSON Export */
+        .json-output {
+            background: #0f0f1e;
+            border: 1px solid rgba(100, 100, 255, 0.3);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #4CAF50;
+            max-height: 150px;
+            overflow-y: auto;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Область захвата -->
+        <div class="capture-area">
+            <div class="capture-placeholder" id="placeholder">
+                <h2>📷 Захват экрана не активен</h2>
+                <p style="color: #666;">Нажмите "Захват Экрана" или "Захват Окна" справа</p>
+            </div>
+            <canvas id="captureCanvas" style="display: none;"></canvas>
+            <div class="cursor-coords" id="cursorCoords">X: 0, Y: 0</div>
+        </div>
+        
+        <!-- Панель управления -->
+        <div class="control-panel">
+            <!-- Заголовок -->
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h1 style="font-size: 20px; color: #2196F3; margin-bottom: 5px;">🎮 TPb Overlay Setup</h1>
+                <p style="font-size: 11px; color: #888;">Настройка зон захвата для покерного стола</p>
+            </div>
+            
+            <!-- Статус -->
+            <div class="status-bar">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">Ожидание захвата...</span>
+            </div>
+            
+            <!-- Секция: Захват -->
+            <div class="panel-section">
+                <div class="section-title">📷 Захват экрана</div>
+                
+                <div class="capture-mode">
+                    <div class="capture-mode-btn active" data-mode="screen">
+                        🖥️<br>Весь экран
+                    </div>
+                    <div class="capture-mode-btn" data-mode="window">
+                        🪟<br>Окно
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" id="startCaptureBtn">
+                    📹 Начать захват
+                </button>
+                
+                <button class="btn btn-danger" id="stopCaptureBtn" style="display: none;">
+                    ⏹️ Остановить захват
+                </button>
+            </div>
+            
+            <!-- Секция: Выбор зон -->
+            <div class="panel-section">
+                <div class="section-title">🎯 Настройка зон ROI</div>
+                
+                <div class="instructions">
+                    <strong>Инструкция:</strong><br>
+                    1. Выберите тип зоны ниже<br>
+                    2. Нажмите и перетащите на изображении<br>
+                    3. Повторите для всех зон<br>
+                    4. Экспортируйте конфиг
+                </div>
+                
+                <select class="zone-type-selector" id="zoneTypeSelector">
+                    <option value="">-- Выберите тип зоны --</option>
+                    <option value="hero_card_1">🃏 Карта героя #1</option>
+                    <option value="hero_card_2">🃏 Карта героя #2</option>
+                    <option value="board_card_1">🎴 Флоп #1</option>
+                    <option value="board_card_2">🎴 Флоп #2</option>
+                    <option value="board_card_3">🎴 Флоп #3</option>
+                    <option value="board_card_4">🎴 Терн</option>
+                    <option value="board_card_5">🎴 Ривер</option>
+                    <option value="pot">💰 Банк (Pot)</option>
+                    <option value="hero_stack">💵 Стек героя</option>
+                    <option value="opponent_1">👤 Оппонент #1</option>
+                    <option value="opponent_2">👤 Оппонент #2</option>
+                    <option value="opponent_3">👤 Оппонент #3</option>
+                    <option value="opponent_4">👤 Оппонент #4</option>
+                    <option value="opponent_5">👤 Оппонент #5</option>
+                </select>
+                
+                <button class="btn btn-secondary" id="clearZonesBtn">
+                    🗑️ Очистить все зоны
+                </button>
+            </div>
+            
+            <!-- Секция: Список зон -->
+            <div class="panel-section">
+                <div class="section-title">📋 Определенные зоны (<span id="zonesCount">0</span>)</div>
+                
+                <div class="zones-list" id="zonesList">
+                    <p style="color: #666; text-align: center; padding: 20px; font-size: 12px;">
+                        Зоны не определены
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Секция: Распознанные данные -->
+            <div class="panel-section">
+                <div class="section-title">🔍 Распознавание (OCR)</div>
+                
+                <div class="card-data">
+                    <div style="font-size: 11px; color: #888; margin-bottom: 6px;">Ваши карты:</div>
+                    <div class="card-display" id="heroCards">
+                        <div class="mini-card">?</div>
+                        <div class="mini-card">?</div>
+                    </div>
+                </div>
+                
+                <div class="card-data">
+                    <div style="font-size: 11px; color: #888; margin-bottom: 6px;">Борд:</div>
+                    <div class="card-display" id="boardCards">
+                        <div class="mini-card">?</div>
+                        <div class="mini-card">?</div>
+                        <div class="mini-card">?</div>
+                        <div class="mini-card">?</div>
+                        <div class="mini-card">?</div>
+                    </div>
+                </div>
+                
+                <button class="btn btn-success" id="testOcrBtn" disabled>
+                    🔍 Тест распознавания
+                </button>
+            </div>
+            
+            <!-- Секция: Экспорт -->
+            <div class="panel-section">
+                <div class="section-title">💾 Экспорт конфигурации</div>
+                
+                <button class="btn btn-primary" id="exportBtn">
+                    📥 Скачать config.yaml
+                </button>
+                
+                <button class="btn btn-secondary" id="copyJsonBtn">
+                    📋 Копировать JSON
+                </button>
+                
+                <div class="json-output" id="jsonOutput" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Глобальные переменные
+        let captureStream = null;
+        let canvas = document.getElementById('captureCanvas');
+        let ctx = canvas.getContext('2d');
+        let videoElement = document.createElement('video');
+        let captureMode = 'screen'; // 'screen' или 'window'
+        let zones = {}; // Сохраненные зоны
+        let isDrawing = false;
+        let startX, startY;
+        let currentZoneType = null;
+        let animationFrameId = null;
+        
+        // Переменные для изменения размера
+        let resizingZone = null;
+        let resizeHandle = null; // 'tl', 'tr', 'bl', 'br', 'move'
+        let resizeStartX, resizeStartY;
+        let originalZone = null;
+        
+        // Элементы DOM
+        const placeholder = document.getElementById('placeholder');
+        const startCaptureBtn = document.getElementById('startCaptureBtn');
+        const stopCaptureBtn = document.getElementById('stopCaptureBtn');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const zoneTypeSelector = document.getElementById('zoneTypeSelector');
+        const zonesList = document.getElementById('zonesList');
+        const zonesCount = document.getElementById('zonesCount');
+        const cursorCoords = document.getElementById('cursorCoords');
+        const clearZonesBtn = document.getElementById('clearZonesBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const copyJsonBtn = document.getElementById('copyJsonBtn');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const testOcrBtn = document.getElementById('testOcrBtn');
+        
+        // Выбор режима захвата
+        document.querySelectorAll('.capture-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.capture-mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                captureMode = btn.dataset.mode;
+            });
+        });
+        
+        // Начало захвата
+        startCaptureBtn.addEventListener('click', async () => {
+            try {
+                const displayMediaOptions = {
+                    video: {
+                        cursor: 'always',
+                        displaySurface: captureMode === 'window' ? 'window' : 'monitor'
+                    },
+                    audio: false
+                };
+                
+                captureStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+                videoElement.srcObject = captureStream;
+                videoElement.play();
+                
+                videoElement.onloadedmetadata = () => {
+                    canvas.width = videoElement.videoWidth;
+                    canvas.height = videoElement.videoHeight;
+                    canvas.style.display = 'block';
+                    placeholder.style.display = 'none';
+                    
+                    updateStatus('active', 'Захват активен');
+                    startCaptureBtn.style.display = 'none';
+                    stopCaptureBtn.style.display = 'block';
+                    testOcrBtn.disabled = false;
+                    
+                    drawFrame();
+                };
+                
+                // Обработка остановки захвата
+                captureStream.getVideoTracks()[0].onended = () => {
+                    stopCapture();
+                };
+                
+            } catch (err) {
+                console.error('Ошибка захвата:', err);
+                alert('Ошибка захвата экрана: ' + err.message);
+            }
+        });
+        
+        // Остановка захвата
+        stopCaptureBtn.addEventListener('click', stopCapture);
+        
+        function stopCapture() {
+            if (captureStream) {
+                captureStream.getTracks().forEach(track => track.stop());
+                captureStream = null;
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            canvas.style.display = 'none';
+            placeholder.style.display = 'block';
+            updateStatus('inactive', 'Захват остановлен');
+            startCaptureBtn.style.display = 'block';
+            stopCaptureBtn.style.display = 'none';
+            testOcrBtn.disabled = true;
+        }
+        
+        // Отрисовка кадра
+        function drawFrame() {
+            if (!captureStream) return;
+            
+            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            
+            // Отрисовка зон
+            drawZones();
+            
+            animationFrameId = requestAnimationFrame(drawFrame);
+        }
+        
+        // Отрисовка зон
+        function drawZones() {
+            ctx.strokeStyle = '#4CAF50';
+            ctx.lineWidth = 3;
+            ctx.fillStyle = 'rgba(76, 175, 80, 0.2)';
+            ctx.font = 'bold 14px Arial';
+            
+            Object.entries(zones).forEach(([name, zone]) => {
+                ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+                ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
+                
+                // Надпись
+                const labelWidth = ctx.measureText(name).width + 16;
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(zone.x, zone.y - 20, labelWidth, 20);
+                ctx.fillStyle = 'white';
+                ctx.fillText(name, zone.x + 8, zone.y - 5);
+                ctx.fillStyle = 'rgba(76, 175, 80, 0.2)';
+                
+                // Рисуем ручки для изменения размера (углы)
+                drawResizeHandles(zone);
+            });
+        }
+        
+        // Рисование ручек изменения размера
+        function drawResizeHandles(zone) {
+            const handleSize = 12;
+            const handles = [
+                { x: zone.x, y: zone.y }, // top-left
+                { x: zone.x + zone.w, y: zone.y }, // top-right
+                { x: zone.x, y: zone.y + zone.h }, // bottom-left
+                { x: zone.x + zone.w, y: zone.y + zone.h }, // bottom-right
+            ];
+            
+            ctx.fillStyle = '#FF9800';
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            
+            handles.forEach(handle => {
+                ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+                ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+            });
+            
+            // Центральная ручка для перемещения
+            const centerX = zone.x + zone.w / 2;
+            const centerY = zone.y + zone.h / 2;
+            ctx.fillStyle = 'rgba(33, 150, 243, 0.8)';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        // Проверка клика на ручки
+        function checkResizeHandles(x, y) {
+            const handleSize = 12;
+            let foundHandle = false;
+            
+            for (const [name, zone] of Object.entries(zones)) {
+                const handles = {
+                    'tl': { x: zone.x, y: zone.y },
+                    'tr': { x: zone.x + zone.w, y: zone.y },
+                    'bl': { x: zone.x, y: zone.y + zone.h },
+                    'br': { x: zone.x + zone.w, y: zone.y + zone.h },
+                    'move': { x: zone.x + zone.w / 2, y: zone.y + zone.h / 2 }
+                };
+                
+                for (const [handle, pos] of Object.entries(handles)) {
+                    const distance = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+                    if (distance < (handle === 'move' ? 15 : handleSize)) {
+                        canvas.style.cursor = handle === 'move' ? 'move' : 
+                                            handle === 'tl' || handle === 'br' ? 'nwse-resize' :
+                                            'nesw-resize';
+                        foundHandle = true;
+                        return;
+                    }
+                }
+            }
+            
+            if (!foundHandle) {
+                canvas.style.cursor = 'crosshair';
+            }
+        }
+        
+        // Обработка изменения размера
+        function handleResize(x, y) {
+            if (!resizingZone || !originalZone) return;
+            
+            const dx = x - resizeStartX;
+            const dy = y - resizeStartY;
+            
+            if (resizeHandle === 'move') {
+                // Перемещение всей зоны
+                zones[resizingZone].x = originalZone.x + dx;
+                zones[resizingZone].y = originalZone.y + dy;
+            } else if (resizeHandle === 'tl') {
+                // Верхний левый угол
+                zones[resizingZone].x = originalZone.x + dx;
+                zones[resizingZone].y = originalZone.y + dy;
+                zones[resizingZone].w = originalZone.w - dx;
+                zones[resizingZone].h = originalZone.h - dy;
+            } else if (resizeHandle === 'tr') {
+                // Верхний правый угол
+                zones[resizingZone].y = originalZone.y + dy;
+                zones[resizingZone].w = originalZone.w + dx;
+                zones[resizingZone].h = originalZone.h - dy;
+            } else if (resizeHandle === 'bl') {
+                // Нижний левый угол
+                zones[resizingZone].x = originalZone.x + dx;
+                zones[resizingZone].w = originalZone.w - dx;
+                zones[resizingZone].h = originalZone.h + dy;
+            } else if (resizeHandle === 'br') {
+                // Нижний правый угол
+                zones[resizingZone].w = originalZone.w + dx;
+                zones[resizingZone].h = originalZone.h + dy;
+            }
+            
+            // Минимальный размер
+            if (zones[resizingZone].w < 10) zones[resizingZone].w = 10;
+            if (zones[resizingZone].h < 10) zones[resizingZone].h = 10;
+            
+            updateZonesList();
+        }
+        
+        // Обновление статуса
+        function updateStatus(state, text) {
+            statusIndicator.className = `status-indicator status-${state}`;
+            statusText.textContent = text;
+        }
+        
+        // Выбор зоны для рисования
+        zoneTypeSelector.addEventListener('change', (e) => {
+            currentZoneType = e.target.value;
+            if (currentZoneType) {
+                updateStatus('active', `Выбрана зона: ${e.target.selectedOptions[0].text}`);
+            }
+        });
+        
+        // Рисование зоны на canvas
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
+            const y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
+            
+            // Проверяем, кликнули ли на ручку изменения размера
+            const handleSize = 12;
+            for (const [name, zone] of Object.entries(zones)) {
+                const handles = {
+                    'tl': { x: zone.x, y: zone.y },
+                    'tr': { x: zone.x + zone.w, y: zone.y },
+                    'bl': { x: zone.x, y: zone.y + zone.h },
+                    'br': { x: zone.x + zone.w, y: zone.y + zone.h },
+                    'move': { x: zone.x + zone.w / 2, y: zone.y + zone.h / 2 }
+                };
+                
+                for (const [handle, pos] of Object.entries(handles)) {
+                    const distance = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+                    if (distance < (handle === 'move' ? 15 : handleSize)) {
+                        resizingZone = name;
+                        resizeHandle = handle;
+                        resizeStartX = x;
+                        resizeStartY = y;
+                        originalZone = { ...zone };
+                        return;
+                    }
+                }
+            }
+            
+            // Если не кликнули на ручку, начинаем рисовать новую зону
+            if (!currentZoneType) {
+                alert('Сначала выберите тип зоны!');
+                return;
+            }
+            
+            isDrawing = true;
+            startX = x;
+            startY = y;
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
+            const y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
+            
+            cursorCoords.style.display = 'block';
+            cursorCoords.textContent = `X: ${x}, Y: ${y}`;
+            
+            // Проверка наведения на ручки изменения размера
+            if (!isDrawing && !resizingZone) {
+                checkResizeHandles(x, y);
+            }
+            
+            if (isDrawing) {
+                // Показываем временную зону при рисовании С ПРЕВЬЮ
+                const tempZone = {
+                    x: Math.min(startX, x),
+                    y: Math.min(startY, y),
+                    w: Math.abs(x - startX),
+                    h: Math.abs(y - startY)
+                };
+                
+                // Перерисовываем кадр
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                drawZones();
+                
+                // Рисуем временную зону с сеткой и полупрозрачной заливкой
+                ctx.fillStyle = 'rgba(255, 152, 0, 0.3)';
+                ctx.fillRect(tempZone.x, tempZone.y, tempZone.w, tempZone.h);
+                
+                ctx.strokeStyle = '#FF9800';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([10, 5]);
+                ctx.strokeRect(tempZone.x, tempZone.y, tempZone.w, tempZone.h);
+                ctx.setLineDash([]);
+                
+                // Рисуем сетку для лучшей видимости
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 1;
+                const gridSize = 20;
+                
+                // Вертикальные линии
+                for (let gx = tempZone.x; gx <= tempZone.x + tempZone.w; gx += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(gx, tempZone.y);
+                    ctx.lineTo(gx, tempZone.y + tempZone.h);
+                    ctx.stroke();
+                }
+                
+                // Горизонтальные линии
+                for (let gy = tempZone.y; gy <= tempZone.y + tempZone.h; gy += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(tempZone.x, gy);
+                    ctx.lineTo(tempZone.x + tempZone.w, gy);
+                    ctx.stroke();
+                }
+                
+                // Показываем размер
+                ctx.fillStyle = '#FF9800';
+                ctx.font = 'bold 16px Arial';
+                const sizeText = `${tempZone.w} × ${tempZone.h}`;
+                const textWidth = ctx.measureText(sizeText).width;
+                ctx.fillRect(tempZone.x + tempZone.w / 2 - textWidth / 2 - 5, tempZone.y + tempZone.h / 2 - 12, textWidth + 10, 24);
+                ctx.fillStyle = 'white';
+                ctx.fillText(sizeText, tempZone.x + tempZone.w / 2 - textWidth / 2, tempZone.y + tempZone.h / 2 + 6);
+            }
+            
+            // Изменение размера зоны
+            if (resizingZone) {
+                handleResize(x, y);
+            }
+        });
+        
+        canvas.addEventListener('mouseup', (e) => {
+            if (resizingZone) {
+                resizingZone = null;
+                resizeHandle = null;
+                originalZone = null;
+                updateStatus('active', 'Зона изменена!');
+                return;
+            }
+            
+            if (!isDrawing) return;
+            
+            isDrawing = false;
+            const rect = canvas.getBoundingClientRect();
+            const endX = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
+            const endY = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
+            
+            const zone = {
+                x: Math.min(startX, endX),
+                y: Math.min(startY, endY),
+                w: Math.abs(endX - startX),
+                h: Math.abs(endY - startY)
+            };
+            
+            // Минимальный размер зоны
+            if (zone.w < 10 || zone.h < 10) {
+                alert('Зона слишком маленькая. Нарисуйте область больше.');
+                return;
+            }
+            
+            // Сохраняем зону
+            zones[currentZoneType] = zone;
+            updateZonesList();
+            
+            // Сбрасываем выбор
+            zoneTypeSelector.value = '';
+            currentZoneType = null;
+            updateStatus('active', `Зона добавлена! Всего: ${Object.keys(zones).length}`);
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            cursorCoords.style.display = 'none';
+        });
+        
+        // Обновление списка зон
+        function updateZonesList() {
+            zonesCount.textContent = Object.keys(zones).length;
+            
+            if (Object.keys(zones).length === 0) {
+                zonesList.innerHTML = '<p style="color: #666; text-align: center; padding: 20px; font-size: 12px;">Зоны не определены</p>';
+                return;
+            }
+            
+            zonesList.innerHTML = Object.entries(zones).map(([name, zone]) => `
+                <div class="zone-item">
+                    <div>
+                        <div class="zone-name">${name}</div>
+                        <div class="zone-coords">x:${zone.x} y:${zone.y} w:${zone.w} h:${zone.h}</div>
+                    </div>
+                    <button class="zone-delete" onclick="deleteZone('${name}')">✕</button>
+                </div>
+            `).join('');
+        }
+        
+        // Удаление зоны
+        window.deleteZone = function(name) {
+            delete zones[name];
+            updateZonesList();
+            updateStatus('active', `Зона удалена: ${name}`);
+        };
+        
+        // Очистка всех зон
+        clearZonesBtn.addEventListener('click', () => {
+            if (confirm('Удалить все зоны?')) {
+                zones = {};
+                updateZonesList();
+                updateStatus('inactive', 'Все зоны удалены');
+            }
+        });
+        
+        // Экспорт конфигурации
+        exportBtn.addEventListener('click', () => {
+            const config = generateConfig();
+            const yaml = convertToYAML(config);
+            
+            const blob = new Blob([yaml], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'poker_table_config.yaml';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            updateStatus('active', 'Конфиг экспортирован!');
+        });
+        
+        // Копирование JSON
+        copyJsonBtn.addEventListener('click', () => {
+            const config = generateConfig();
+            const json = JSON.stringify(config, null, 2);
+            
+            jsonOutput.textContent = json;
+            jsonOutput.style.display = 'block';
+            
+            navigator.clipboard.writeText(json).then(() => {
+                updateStatus('active', 'JSON скопирован в буфер обмена!');
+            });
+        });
+        
+        // Генерация конфигурации
+        function generateConfig() {
+            return {
+                adapter: "custom_poker_table",
+                description: "Custom poker table configuration",
+                capture_mode: captureMode,
+                screen_resolution: {
+                    width: canvas.width,
+                    height: canvas.height
+                },
+                rois: zones,
+                created_at: new Date().toISOString()
+            };
+        }
+        
+        // Конвертация в YAML
+        function convertToYAML(obj) {
+            let yaml = `# TPb Poker Table Configuration
+# Generated: ${new Date().toLocaleString()}
+
+adapter: ${obj.adapter}
+description: "${obj.description}"
+capture_mode: ${obj.capture_mode}
+
+screen_resolution:
+  width: ${obj.screen_resolution.width}
+  height: ${obj.screen_resolution.height}
+
+rois:
+`;
+            
+            Object.entries(obj.rois).forEach(([name, zone]) => {
+                yaml += `  ${name}: { x: ${zone.x}, y: ${zone.y}, w: ${zone.w}, h: ${zone.h} }\n`;
+            });
+            
+            return yaml;
+        }
+        
+        // Тест OCR (симуляция)
+        testOcrBtn.addEventListener('click', () => {
+            // Симуляция распознавания
+            const suits = ['♠', '♥', '♦', '♣'];
+            const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+            
+            // Симуляция карт героя
+            const heroCardsDiv = document.getElementById('heroCards');
+            heroCardsDiv.innerHTML = '';
+            for (let i = 0; i < 2; i++) {
+                const suit = suits[Math.floor(Math.random() * suits.length)];
+                const rank = ranks[Math.floor(Math.random() * ranks.length)];
+                const card = document.createElement('div');
+                card.className = 'mini-card ' + (suit === '♥' || suit === '♦' ? 'hearts' : 'spades');
+                card.textContent = rank + suit;
+                heroCardsDiv.appendChild(card);
+            }
+            
+            // Симуляция борда
+            const boardCardsDiv = document.getElementById('boardCards');
+            boardCardsDiv.innerHTML = '';
+            const numBoardCards = Math.floor(Math.random() * 3) + 3; // 3-5 карт
+            for (let i = 0; i < 5; i++) {
+                const card = document.createElement('div');
+                card.className = 'mini-card';
+                if (i < numBoardCards) {
+                    const suit = suits[Math.floor(Math.random() * suits.length)];
+                    const rank = ranks[Math.floor(Math.random() * ranks.length)];
+                    card.className += ' ' + (suit === '♥' || suit === '♦' ? 'hearts' : 'spades');
+                    card.textContent = rank + suit;
+                } else {
+                    card.textContent = '?';
+                }
+                boardCardsDiv.appendChild(card);
+            }
+            
+            updateStatus('active', 'OCR выполнено! (симуляция)');
+        });
+        
+        // Инициализация
+        updateStatus('inactive', 'Ожидание захвата...');
+        updateZonesList();
+    </script>
+</body>
+</html>

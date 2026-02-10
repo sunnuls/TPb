@@ -1,0 +1,43 @@
+{
+  "accounts": [
+    {
+      "account_id": "a52ebf51-63dc-4eb1-9002-5d351a25c2f5",
+      "nickname": "sssss",
+      "status": "running",
+      "window_info": {
+        "window_id": "4392850",
+        "window_title": "Merapi - \u0411\u0435\u0437 \u043b\u0438\u043c\u0438\u0442\u0430 \u0425\u043e\u043b\u0434\u0435\u043c 100/200 \u0423\u0441\u043b\u043e\u0432\u043d\u044b\u0435 \u0444\u0438\u0448\u043a\u0438 - \u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c: sunnuls",
+        "window_type": "desktop_client",
+        "process_name": "PokerStars.exe",
+        "position": [
+          552,
+          228,
+          1454,
+          1044
+        ]
+      },
+      "roi_configured": true,
+      "bot_running": true,
+      "room": "ggpoker",
+      "notes": "",
+      "game_preferences": {
+        "enabled_games": [
+          "Hold'em"
+        ],
+        "min_stake": "$2/$5",
+        "max_stake": "$5/$10",
+        "stake_levels": [
+          "Medium"
+        ],
+        "min_players": 1,
+        "max_players": 1,
+        "preferred_table_size": 6,
+        "auto_join_tables": true,
+        "max_tables": 1,
+        "avoid_full_bot_tables": true,
+        "prefer_weak_players": true
+      }
+    }
+  ],
+  "count": 1
+}

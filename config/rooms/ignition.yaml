@@ -1,0 +1,165 @@
+# Ignition Casino Room Configuration
+# Resolution: 1920x1080
+# EDUCATIONAL USE ONLY
+
+room_name: "ignition"
+resolution: "1920x1080"
+
+# ROI Definitions (slightly different layout than PokerStars)
+rois:
+  # Hero cards (bottom center)
+  hero_card_1:
+    x: 850
+    y: 860
+    width: 85
+    height: 115
+    
+  hero_card_2:
+    x: 955
+    y: 860
+    width: 85
+    height: 115
+  
+  # Board cards (center)
+  board_card_1:
+    x: 690
+    y: 440
+    width: 75
+    height: 100
+    
+  board_card_2:
+    x: 785
+    y: 440
+    width: 75
+    height: 100
+    
+  board_card_3:
+    x: 880
+    y: 440
+    width: 75
+    height: 100
+    
+  board_card_4:
+    x: 975
+    y: 440
+    width: 75
+    height: 100
+    
+  board_card_5:
+    x: 1070
+    y: 440
+    width: 75
+    height: 100
+  
+  # Pot size (top center)
+  pot:
+    x: 840
+    y: 340
+    width: 220
+    height: 45
+  
+  # Hero stack (bottom)
+  hero_stack:
+    x: 840
+    y: 960
+    width: 160
+    height: 35
+  
+  # Villain stacks
+  villain_1_stack:
+    x: 280
+    y: 580
+    width: 130
+    height: 35
+    
+  villain_2_stack:
+    x: 380
+    y: 180
+    width: 130
+    height: 35
+    
+  villain_3_stack:
+    x: 840
+    y: 80
+    width: 130
+    height: 35
+    
+  villain_4_stack:
+    x: 1320
+    y: 180
+    width: 130
+    height: 35
+    
+  villain_5_stack:
+    x: 1420
+    y: 580
+    width: 130
+    height: 35
+  
+  # Action buttons (different positioning)
+  fold_button:
+    x: 730
+    y: 1010
+    width: 110
+    height: 45
+    
+  check_button:
+    x: 860
+    y: 1010
+    width: 110
+    height: 45
+    
+  call_button:
+    x: 860
+    y: 1010
+    width: 110
+    height: 45
+    
+  raise_button:
+    x: 990
+    y: 1010
+    width: 110
+    height: 45
+  
+  # Bet amount field
+  bet_amount_field:
+    x: 860
+    y: 965
+    width: 110
+    height: 35
+
+# Visual characteristics (different colors)
+colors:
+  table_felt: [45, 85, 65]  # Darker green
+  card_back: [38, 62, 110]
+  button_active: [240, 180, 40]
+  button_inactive: [90, 90, 90]
+
+# OCR settings (different format)
+ocr:
+  pot_prefix: ""  # No prefix
+  bet_prefix: ""
+  stack_suffix: ""
+  decimal_separator: "."
+  thousands_separator: ","
+
+# Card recognition (slightly different sizes)
+cards:
+  rank_height: 22
+  suit_height: 16
+  rank_y_offset: 12
+  suit_y_offset: 38
+
+# Metadata
+metadata:
+  table_type_indicator:
+    x: 90
+    y: 45
+    width: 160
+    height: 35
+  
+  street_indicator:
+    x: 840
+    y: 395
+    width: 220
+    height: 35

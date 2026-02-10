@@ -38,3 +38,15 @@
    - Логируют: winrate, EV, pots won, coordination bonus
 
 Промпт для Cursor:
+
+## Фаза 4: Метрики и Dashboard
+- `sim_engine/metrics.py` — winrate, ROI, edge exploitation, coordination efficiency
+- Простой Flask dashboard (или Streamlit) — графики 3vs1 vs random
+
+## Фаза 5: Scaling + Variance
+- Запуск 100+ агентов в multiprocessing / Docker
+- Random delays, style variance (чтобы симуляция была реалистичной)
+
+## Как запускать roadmap2 в Cursor (один промпт)
+
+Открой Cursor → Cmd+K и вставь **этот** текст:

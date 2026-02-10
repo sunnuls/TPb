@@ -1,0 +1,165 @@
+# PokerStars Room Configuration
+# Resolution: 1920x1080
+# EDUCATIONAL USE ONLY
+
+room_name: "pokerstars"
+resolution: "1920x1080"
+
+# ROI Definitions (Region of Interest)
+rois:
+  # Hero cards (bottom center)
+  hero_card_1:
+    x: 860
+    y: 850
+    width: 80
+    height: 110
+    
+  hero_card_2:
+    x: 960
+    y: 850
+    width: 80
+    height: 110
+  
+  # Board cards (center)
+  board_card_1:
+    x: 700
+    y: 450
+    width: 70
+    height: 95
+    
+  board_card_2:
+    x: 790
+    y: 450
+    width: 70
+    height: 95
+    
+  board_card_3:
+    x: 880
+    y: 450
+    width: 70
+    height: 95
+    
+  board_card_4:
+    x: 970
+    y: 450
+    width: 70
+    height: 95
+    
+  board_card_5:
+    x: 1060
+    y: 450
+    width: 70
+    height: 95
+  
+  # Pot size (top center)
+  pot:
+    x: 850
+    y: 350
+    width: 200
+    height: 40
+  
+  # Hero stack (bottom)
+  hero_stack:
+    x: 850
+    y: 950
+    width: 150
+    height: 30
+  
+  # Villain stacks (positions relative to hero)
+  villain_1_stack:  # Left
+    x: 300
+    y: 600
+    width: 120
+    height: 30
+    
+  villain_2_stack:  # Top-left
+    x: 400
+    y: 200
+    width: 120
+    height: 30
+    
+  villain_3_stack:  # Top
+    x: 850
+    y: 100
+    width: 120
+    height: 30
+    
+  villain_4_stack:  # Top-right
+    x: 1300
+    y: 200
+    width: 120
+    height: 30
+    
+  villain_5_stack:  # Right
+    x: 1400
+    y: 600
+    width: 120
+    height: 30
+  
+  # Action buttons
+  fold_button:
+    x: 750
+    y: 1000
+    width: 100
+    height: 40
+    
+  check_button:
+    x: 870
+    y: 1000
+    width: 100
+    height: 40
+    
+  call_button:
+    x: 870
+    y: 1000
+    width: 100
+    height: 40
+    
+  raise_button:
+    x: 990
+    y: 1000
+    width: 100
+    height: 40
+  
+  # Bet amount field
+  bet_amount_field:
+    x: 870
+    y: 960
+    width: 100
+    height: 30
+
+# Visual characteristics
+colors:
+  table_felt: [53, 101, 77]  # RGB for felt color
+  card_back: [42, 68, 123]
+  button_active: [255, 200, 50]
+  button_inactive: [100, 100, 100]
+
+# OCR settings
+ocr:
+  pot_prefix: "Pot:"
+  bet_prefix: "Bet:"
+  stack_suffix: ""
+  decimal_separator: "."
+  thousands_separator: ","
+
+# Card recognition
+cards:
+  rank_height: 20  # pixels
+  suit_height: 15
+  rank_y_offset: 10
+  suit_y_offset: 35
+
+# Metadata
+metadata:
+  table_type_indicator:
+    x: 100
+    y: 50
+    width: 150
+    height: 30
+  
+  street_indicator:
+    x: 850
+    y: 400
+    width: 200
+    height: 30
