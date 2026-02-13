@@ -1,0 +1,203 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "description": "Bot behavior profiles — aggression, equity thresholds, timing, mouse. EDUCATIONAL RESEARCH ONLY."
+  },
+  "profiles": {
+    "shark": {
+      "display_name": "Shark",
+      "description": "Tight-aggressive: high equity threshold, fast and decisive",
+      "aggression_level": 8,
+      "equity_thresholds": {
+        "preflop_open": 0.60,
+        "preflop_call": 0.55,
+        "postflop_bet": 0.50,
+        "postflop_call": 0.45,
+        "river_bluff": 0.30
+      },
+      "bet_sizing": {
+        "open_raise_bb": 3.0,
+        "cbet_pot_fraction": 0.65,
+        "turn_pot_fraction": 0.70,
+        "river_pot_fraction": 0.80,
+        "max_bet_multiplier": 5.0
+      },
+      "timing": {
+        "delay_min": 0.3,
+        "delay_max": 2.0,
+        "think_time_fold": [0.2, 0.8],
+        "think_time_call": [0.3, 1.5],
+        "think_time_raise": [0.4, 2.0],
+        "think_time_allin": [0.8, 3.0]
+      },
+      "mouse": {
+        "curve_intensity": 3,
+        "speed_mult": 0.8,
+        "jitter": 0.5,
+        "overshoot_prob": 0.3
+      },
+      "session": {
+        "max_session_time": 150,
+        "auto_rejoin": true,
+        "table_select_min_vpip": 25
+      },
+      "behavior_style": "aggressive"
+    },
+    "rock": {
+      "display_name": "Rock",
+      "description": "Very tight-passive: waits for premium hands only",
+      "aggression_level": 2,
+      "equity_thresholds": {
+        "preflop_open": 0.78,
+        "preflop_call": 0.72,
+        "postflop_bet": 0.65,
+        "postflop_call": 0.58,
+        "river_bluff": 0.15
+      },
+      "bet_sizing": {
+        "open_raise_bb": 2.5,
+        "cbet_pot_fraction": 0.50,
+        "turn_pot_fraction": 0.45,
+        "river_pot_fraction": 0.40,
+        "max_bet_multiplier": 2.0
+      },
+      "timing": {
+        "delay_min": 0.8,
+        "delay_max": 4.0,
+        "think_time_fold": [0.3, 1.2],
+        "think_time_call": [0.8, 3.0],
+        "think_time_raise": [1.2, 4.0],
+        "think_time_allin": [2.0, 5.0]
+      },
+      "mouse": {
+        "curve_intensity": 7,
+        "speed_mult": 1.4,
+        "jitter": 1.2,
+        "overshoot_prob": 0.6
+      },
+      "session": {
+        "max_session_time": 90,
+        "auto_rejoin": false,
+        "table_select_min_vpip": 35
+      },
+      "behavior_style": "passive"
+    },
+    "tag": {
+      "display_name": "TAG",
+      "description": "Tight-Aggressive: balanced solid play",
+      "aggression_level": 6,
+      "equity_thresholds": {
+        "preflop_open": 0.65,
+        "preflop_call": 0.58,
+        "postflop_bet": 0.52,
+        "postflop_call": 0.48,
+        "river_bluff": 0.25
+      },
+      "bet_sizing": {
+        "open_raise_bb": 2.8,
+        "cbet_pot_fraction": 0.60,
+        "turn_pot_fraction": 0.55,
+        "river_pot_fraction": 0.65,
+        "max_bet_multiplier": 3.5
+      },
+      "timing": {
+        "delay_min": 0.4,
+        "delay_max": 3.0,
+        "think_time_fold": [0.3, 1.0],
+        "think_time_call": [0.5, 2.0],
+        "think_time_raise": [0.6, 2.5],
+        "think_time_allin": [1.0, 3.5]
+      },
+      "mouse": {
+        "curve_intensity": 5,
+        "speed_mult": 1.0,
+        "jitter": 0.8,
+        "overshoot_prob": 0.5
+      },
+      "session": {
+        "max_session_time": 120,
+        "auto_rejoin": true,
+        "table_select_min_vpip": 28
+      },
+      "behavior_style": "balanced"
+    },
+    "lag": {
+      "display_name": "LAG",
+      "description": "Loose-Aggressive: wide range, lots of aggression",
+      "aggression_level": 9,
+      "equity_thresholds": {
+        "preflop_open": 0.48,
+        "preflop_call": 0.42,
+        "postflop_bet": 0.40,
+        "postflop_call": 0.35,
+        "river_bluff": 0.40
+      },
+      "bet_sizing": {
+        "open_raise_bb": 3.5,
+        "cbet_pot_fraction": 0.75,
+        "turn_pot_fraction": 0.80,
+        "river_pot_fraction": 0.90,
+        "max_bet_multiplier": 7.0
+      },
+      "timing": {
+        "delay_min": 0.2,
+        "delay_max": 1.8,
+        "think_time_fold": [0.15, 0.7],
+        "think_time_call": [0.2, 1.2],
+        "think_time_raise": [0.3, 1.5],
+        "think_time_allin": [0.5, 2.5]
+      },
+      "mouse": {
+        "curve_intensity": 2,
+        "speed_mult": 0.7,
+        "jitter": 0.4,
+        "overshoot_prob": 0.25
+      },
+      "session": {
+        "max_session_time": 180,
+        "auto_rejoin": true,
+        "table_select_min_vpip": 20
+      },
+      "behavior_style": "aggressive"
+    },
+    "fish": {
+      "display_name": "Fish",
+      "description": "Loose-Passive: calls too much, bluffs randomly — mimics a weak player",
+      "aggression_level": 4,
+      "equity_thresholds": {
+        "preflop_open": 0.50,
+        "preflop_call": 0.38,
+        "postflop_bet": 0.48,
+        "postflop_call": 0.30,
+        "river_bluff": 0.35
+      },
+      "bet_sizing": {
+        "open_raise_bb": 2.0,
+        "cbet_pot_fraction": 0.40,
+        "turn_pot_fraction": 0.35,
+        "river_pot_fraction": 0.30,
+        "max_bet_multiplier": 2.5
+      },
+      "timing": {
+        "delay_min": 0.6,
+        "delay_max": 4.5,
+        "think_time_fold": [0.5, 2.0],
+        "think_time_call": [0.3, 1.5],
+        "think_time_raise": [1.0, 4.0],
+        "think_time_allin": [1.5, 5.0]
+      },
+      "mouse": {
+        "curve_intensity": 8,
+        "speed_mult": 1.3,
+        "jitter": 1.5,
+        "overshoot_prob": 0.7
+      },
+      "session": {
+        "max_session_time": 60,
+        "auto_rejoin": false,
+        "table_select_min_vpip": 40
+      },
+      "behavior_style": "erratic"
+    }
+  }
+}

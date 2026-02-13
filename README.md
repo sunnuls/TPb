@@ -10,6 +10,20 @@ Production-ready Python 3.11+ scaffold for an **AI Poker + Blackjack Coach** wit
 - **Validation-first**: `coach_app/state/validate.py` rejects inconsistent states (duplicate cards, negative pot, impossible bet sizes, etc.).
 - **Separation of concerns**: `ingest/` → `state/` → `engine/` → `coach/` → `api/` (and optional `ui/telegram_bot.py`).
 
+### Documentation
+
+| Guide | Description |
+|---|---|
+| [`docs/VISION_SETUP.md`](docs/VISION_SETUP.md) | Vision pipeline setup: capture, ROI, OCR, YOLO, humanization |
+| [`docs/BOT_PROFILES.md`](docs/BOT_PROFILES.md) | Bot profiles: presets, JSON format, A/B testing |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Troubleshooting: diagnostics, common errors, fixes |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture overview |
+| [`docs/API.md`](docs/API.md) | Coach API reference (REST endpoints) |
+| [`docs/API_HUB_DECISION.md`](docs/API_HUB_DECISION.md) | Hub & Decision engine API (WebSocket + internal) |
+| [`docs/POLICY.md`](docs/POLICY.md) | Policy & ethical guidelines |
+| [`docs/RANGES.md`](docs/RANGES.md) | Range Model v0 details |
+| [`docs/LIVE_RTA.md`](docs/LIVE_RTA.md) | Live RTA setup guide |
+
 ### Policy & product modes
 
 Policy rules live in `coach_app/product/policy.py`.
@@ -432,12 +446,242 @@ python -m coach_app.rta.live_rta --config coach_app/configs/adapters/pokerstars_
 python -m coach_app.rta.live_rta --config coach_app/configs/adapters/pokerstars_live.yaml --mode console --no-ethical
 ```
 
+### HIVE Launcher — Bot Coordination System
+
+> ⚠️ **EDUCATIONAL RESEARCH ONLY** — coordinated bot operation (collusion) is ILLEGAL in real poker.
+
+HIVE Launcher — GUI-приложение для управления пулом ботов с автоматическим vision pipeline, decision engine и action executor.
+
+#### Architecture
+
+```
+launcher/
+├── main.py                 # Entry point (PyQt6 GUI)
+├── bot_manager.py          # Bot pool management (start/stop/monitor)
+├── bot_instance.py         # Single bot: Vision → Decision → Action loop
+├── bot_settings.py         # Per-bot configuration (BotSettings dataclass)
+├── bot_profile_manager.py  # JSON profiles (shark/rock/tag/lag/fish)
+├── bot_config_loader.py    # Per-bot config loading + hot-reload
+├── ab_testing.py           # A/B profile comparison framework
+├── collusion_coordinator.py # HIVE coordination (card sharing)
+├── auto_seating.py         # Auto table selection
+├── auto_bot_controller.py  # Automated bot lifecycle
+├── lobby_scanner.py        # Lobby monitoring
+├── structured_logger.py    # JSON structured logging
+├── log_storage.py          # SQLite + Elasticsearch log storage
+├── telegram_alerts.py      # Telegram alerts (ban/error notifications)
+├── config_manager.py       # Room/ROI config management
+├── window_capture.py       # Window capture utilities
+├── log_handler.py          # GUI log handler (PyQt6 signals)
+├── system_tray.py          # System tray icon
+├── vision/                 # Vision pipeline modules
+│   ├── auto_ui_detector.py       # Automatic UI element detection
+│   ├── auto_navigator.py         # Auto-navigation between screens
+│   ├── auto_roi_finder.py        # Auto-calibration of ROI zones
+│   ├── window_capturer.py        # Win32 API screen capture
+│   ├── multi_template_matching.py # Multi-scale template matching + OCR
+│   ├── yolo_region_detector.py   # YOLOv8 table region detection
+│   ├── lobby_ocr.py              # Lobby screenshot OCR engine
+│   ├── lobby_http_parser.py      # HTTP-based lobby data fallback
+│   ├── lobby_anti_limit.py       # Rate-limit protection orchestrator
+│   ├── mouse_curve_generator.py  # Bézier mouse trajectory generation
+│   ├── behavioral_variance.py    # Player behavior profiles (aggressive/passive)
+│   └── anti_pattern_executor.py  # Anti-pattern click orchestrator
+├── ui/                     # PyQt6 GUI tabs
+│   ├── main_window.py
+│   ├── dashboard_tab.py
+│   ├── bots_control_tab.py
+│   ├── accounts_tab.py
+│   ├── logs_tab.py
+│   └── settings_dialog.py
+├── models/                 # Data models (Account, ROIConfig)
+├── tests/                  # Unit tests (400+ tests)
+└── config/                 # Runtime configuration
+    ├── bot_profiles.json   # 5 preset profiles
+    ├── accounts.json       # Account credentials
+    └── rooms/              # Per-room ROI configs (YAML)
+```
+
+#### Launching the GUI
+
+```bash
+python -m launcher.main
+```
+
+Requires `PyQt6`. The GUI provides tabs for:
+- **Dashboard** — overview of all bots, profit, active tables
+- **Bot Control** — start/stop individual bots, assign profiles
+- **Accounts** — manage poker room accounts and windows
+- **Logs** — real-time color-coded log stream
+- **Settings** — global and per-bot configuration
+
+#### Launching Live Bot (headless)
+
+To start bots without the GUI, use the auto-bot controller:
+
+```bash
+python -c "
+from launcher.auto_bot_controller import AutoBotController
+controller = AutoBotController()
+controller.start()
+"
+```
+
+#### Command-Line Flags & Configuration
+
+| Parameter | Location | Description |
+|---|---|---|
+| `preset` | `BotSettings` | Strategy preset: `conservative`, `balanced`, `aggressive`, `godmode`, `custom` |
+| `aggression_level` | `BotSettings` | 1–10, controls bet sizing and bluff frequency |
+| `equity_threshold` | `BotSettings` | 0.0–1.0, minimum equity to continue (postflop) |
+| `max_bet_multiplier` | `BotSettings` | 1.0–10.0, maximum bet size relative to pot |
+| `delay_min` / `delay_max` | `BotSettings` | Action delay range (seconds) for humanization |
+| `mouse_curve_intensity` | `BotSettings` | 0–10, Bézier curve curvature for mouse movement |
+| `max_session_time` | `BotSettings` | Maximum session duration (minutes) |
+| `auto_rejoin` | `BotSettings` | Auto-rejoin after disconnect |
+
+#### Bot Profiles (JSON)
+
+Pre-configured profiles in `config/bot_profiles.json`:
+
+| Profile | Style | Aggression | Equity (preflop open) | Description |
+|---|---|---|---|---|
+| `shark` | Tight-Aggressive | 8/10 | 0.60 | Fast, decisive, high fold equity |
+| `rock` | Tight-Passive | 2/10 | 0.78 | Premium hands only, minimal risk |
+| `tag` | TAG (balanced) | 6/10 | 0.65 | Solid default play |
+| `lag` | Loose-Aggressive | 9/10 | 0.48 | Wide range, lots of pressure |
+| `fish` | Loose-Passive | 4/10 | 0.50 | Mimics a weak recreational player |
+
+Assign profiles per bot:
+
+```python
+from launcher.bot_config_loader import BotConfigLoader
+loader = BotConfigLoader()
+loader.assign("bot_1", "shark")
+loader.assign("bot_2", "fish", overrides={"aggression_level": 6})
+settings = loader.load_for_bot("bot_1")
+```
+
+#### ROI Configuration
+
+ROI (Region of Interest) zones define screen areas for card detection, pot, buttons, etc.
+
+**Auto-calibration:**
+
+```python
+from launcher.vision import AutoROIFinder
+finder = AutoROIFinder()
+result = finder.calibrate(screenshot)
+# result.zones = {"hero_card_1": (x, y, w, h), "pot": (...), ...}
+```
+
+**Manual YAML config** (`config/rooms/pokerstars.yaml`):
+
+```yaml
+room: pokerstars
+table_size: 6max
+zones:
+  hero_card_1: {x: 380, y: 420, w: 50, h: 70}
+  hero_card_2: {x: 440, y: 420, w: 50, h: 70}
+  pot:         {x: 400, y: 150, w: 120, h: 30}
+  board:       {x: 280, y: 250, w: 360, h: 70}
+  btn_fold:    {x: 350, y: 550, w: 80, h: 30}
+  btn_call:    {x: 460, y: 550, w: 80, h: 30}
+  btn_raise:   {x: 570, y: 550, w: 80, h: 30}
+```
+
+#### Vision Pipeline
+
+The vision system supports three detection methods:
+
+1. **Template Matching** — `MultiTemplateMatcher` with multi-scale search
+2. **OCR** — `RobustOCR` with Tesseract + EasyOCR + multi-strategy preprocessing
+3. **YOLOv8** — `YOLORegionDetector` for ML-based table region detection
+
+#### Humanization (Anti-Detection)
+
+Mouse movements use Bézier curves with human-like properties:
+
+```python
+from launcher.vision import MouseCurveGenerator
+gen = MouseCurveGenerator(intensity=5)
+path = gen.generate(start=(100, 200), end=(500, 400))
+for pt in path.points:
+    move_to(pt.x, pt.y)
+    sleep(pt.dt)
+```
+
+Behavioral profiles add session-long variance:
+
+```python
+from launcher.vision import BehaviorSampler, BehaviorProfile
+sampler = BehaviorSampler(BehaviorProfile.aggressive())
+think_time = sampler.sample_think_time("raise")  # 0.25–1.2s
+mouse_cfg = sampler.sample_mouse_config()         # curve, speed, jitter
+```
+
+#### Structured Logging
+
+JSON structured logs with context fields:
+
+```python
+from launcher.structured_logger import get_structured_logger, setup_structured_logging
+setup_structured_logging(log_dir="logs")
+
+log = get_structured_logger("bot.engine", bot_id="abc123")
+log.info("Hand started", hand_id=42, table="NL50")
+# → {"ts":"...","level":"INFO","logger":"bot.engine","msg":"Hand started","bot_id":"abc123","hand_id":42,"table":"NL50"}
+```
+
+Log storage backends:
+
+```python
+from launcher.log_storage import SQLiteLogStore, LogRouter
+store = SQLiteLogStore("logs/bot_logs.db")
+store.query(level="ERROR", contains="ban", limit=50)
+```
+
+#### Telegram Alerts
+
+Real-time alerts to Telegram on bans, errors, crashes:
+
+```python
+from launcher.telegram_alerts import TelegramSender, AlertManager, AlertRule
+sender = TelegramSender(bot_token="123:ABC", chat_id="-100123")
+mgr = AlertManager(sender)
+mgr.add_rule(AlertRule(name="ban", level="CRITICAL", keywords=["ban"]))
+mgr.add_rule(AlertRule(name="errors", level="ERROR", cooldown_s=120))
+```
+
+#### Bridge Module
+
+The `bridge/` module connects vision output to action execution:
+
+```
+bridge/
+├── bridge_main.py          # Main vision → state → action loop
+├── state_bridge.py         # Converts vision data to game state
+├── action_translator.py    # Translates decisions to UI actions
+├── roi_manager.py          # ROI zone management
+├── screen_capture.py       # Screen capture (Win32 API)
+├── safety.py               # Safety checks and kill switch
+├── action/
+│   └── real_executor.py    # Mouse/keyboard action execution
+└── config/                 # Bridge-specific configs
+```
+
 ### Dev ergonomics
 
 - **Tests**:
 
 ```bash
 pytest
+```
+
+Run launcher-specific tests:
+
+```bash
+pytest launcher/tests/ -v
 ```
 
 - **API**:

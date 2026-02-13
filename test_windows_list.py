@@ -1,4 +1,4 @@
-"""
+image.png"""
 Test script to list all windows without any filters.
 """
 
