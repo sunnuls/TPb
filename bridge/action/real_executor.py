@@ -1,5 +1,5 @@
 """
-Real Action Executor (Roadmap4 Phase 1).
+Real Action Executor (Roadmap4 Phase 1 + auto_navigate.md Phase 2 + full_hive_month Этап 3).
 
 CRITICAL WARNING: This module executes REAL mouse clicks and keyboard input.
 Use ONLY in controlled educational research environment.
@@ -8,6 +8,19 @@ Risk Levels:
 - LOW: fold/check/call (minimal risk)
 - MEDIUM: bet/raise with fixed amounts
 - HIGH: all-in/large raises
+
+Phase 2 (auto_navigate.md):
+- click_nav_region(): click a NavigationManager-discovered region
+- click_table_entry(): click on a found table row
+- execute_nav_action(): full nav action from NavResult
+- scroll_nav(): scroll the lobby via NavManager integration
+
+Этап 3 (full_hive_month.md):
+- click_game_mode(): switch game mode (NL Hold'em, PLO, etc.)
+- click_table_from_list(): click table by index in lobby
+- scroll_table_list(): scroll through lobby table list
+- click_join_button(): click the Join/Sit button
+- execute_manipulation_action(): map ManipulationDecision → real click
 
 EDUCATIONAL USE ONLY: For HCI research prototype testing.
 Requires explicit --unsafe flag and user confirmation.
@@ -31,6 +44,19 @@ except (ImportError, SyntaxError) as e:
     pyautogui = None  # Set to None for type checking
 
 from bridge.safety import SafetyFramework, SafetyMode
+
+# Graceful import of NavigationManager (auto_navigate.md Phase 2)
+try:
+    from launcher.navigation_manager import (
+        NavigationManager,
+        NavResult,
+        NavStatus,
+        TableEntry,
+        ScreenType,
+    )
+    NAV_AVAILABLE = True
+except Exception:
+    NAV_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -485,6 +511,312 @@ class RealActionExecutor:
             List of execution logs
         """
         return self.execution_logs[-count:]
+
+    # ------------------------------------------------------------------
+    # Navigation-aware actions (auto_navigate.md Phase 2)
+    # ------------------------------------------------------------------
+
+    def click_nav_region(
+        self,
+        x: int,
+        y: int,
+        *,
+        image_offset: tuple[int, int] = (0, 0),
+        description: str = "nav_click",
+    ) -> ExecutionLog:
+        """Click a region discovered by NavigationManager.
+
+        Translates relative image coordinates to absolute screen
+        coordinates using *image_offset* (the client-area origin).
+
+        Args:
+            x:             X coordinate inside the captured image.
+            y:             Y coordinate inside the captured image.
+            image_offset:  (ox, oy) — top-left of client area in screen coords.
+            description:   Label for the log entry.
+
+        Returns:
+            ExecutionLog with result.
+        """
+        abs_x = image_offset[0] + x
+        abs_y = image_offset[1] + y
+        coords = ActionCoordinates(button_x=abs_x, button_y=abs_y)
+        return self.execute_action(
+            action_type=description,
+            coordinates=coords,
+            risk_level=RiskLevel.LOW,
+        )
+
+    def click_table_entry(
+        self,
+        entry: "TableEntry",
+        *,
+        image_offset: tuple[int, int] = (0, 0),
+        x_center: int = 400,
+    ) -> ExecutionLog:
+        """Click a TableEntry row found by NavigationManager.
+
+        Args:
+            entry:        The ``TableEntry`` to click.
+            image_offset: Client-area origin in screen coordinates.
+            x_center:     Horizontal center of the lobby table list.
+
+        Returns:
+            ExecutionLog with result.
+        """
+        if not NAV_AVAILABLE:
+            return ExecutionLog(
+                timestamp=time.time(),
+                action_type="click_table",
+                risk_level=RiskLevel.LOW,
+                coordinates=ActionCoordinates(button_x=0, button_y=0),
+                amount=None,
+                result=ExecutionResult.LIBRARY_NOT_AVAILABLE,
+                duration=0.0,
+            )
+
+        y_center = (entry.bbox[0] + entry.bbox[1]) // 2
+        return self.click_nav_region(
+            x_center,
+            y_center,
+            image_offset=image_offset,
+            description=f"click_table:{entry.name or 'unknown'}",
+        )
+
+    def execute_nav_action(
+        self,
+        nav_result: "NavResult",
+        *,
+        image_offset: tuple[int, int] = (0, 0),
+    ) -> ExecutionLog:
+        """Execute an action based on a NavigationManager result.
+
+        If the NavResult contains a matched table, clicks it.
+        Otherwise logs a no-op.
+
+        Args:
+            nav_result:   Result from ``NavigationManager.navigate_to_table``.
+            image_offset: Client-area origin in screen coordinates.
+
+        Returns:
+            ExecutionLog with result.
+        """
+        if not NAV_AVAILABLE:
+            return ExecutionLog(
+                timestamp=time.time(),
+                action_type="nav_action",
+                risk_level=RiskLevel.LOW,
+                coordinates=ActionCoordinates(button_x=0, button_y=0),
+                amount=None,
+                result=ExecutionResult.LIBRARY_NOT_AVAILABLE,
+                duration=0.0,
+            )
+
+        if nav_result.table is not None:
+            return self.click_table_entry(
+                nav_result.table,
+                image_offset=image_offset,
+            )
+
+        # No table to click — log and return
+        logger.info("execute_nav_action: no table in NavResult (status=%s)",
+                     nav_result.status.value)
+        return ExecutionLog(
+            timestamp=time.time(),
+            action_type="nav_noop",
+            risk_level=RiskLevel.LOW,
+            coordinates=ActionCoordinates(button_x=0, button_y=0),
+            amount=None,
+            result=ExecutionResult.SUCCESS,
+            duration=0.0,
+        )
+
+    def scroll_nav(
+        self,
+        direction: str = "down",
+        amount: int = 3,
+    ) -> ExecutionLog:
+        """Scroll the lobby using pyautogui (nav integration).
+
+        Args:
+            direction: ``"down"`` or ``"up"``.
+            amount:    Number of scroll steps.
+
+        Returns:
+            ExecutionLog with result.
+        """
+        start = time.time()
+        result = ExecutionResult.SUCCESS
+
+        if not PYAUTOGUI_AVAILABLE or pyautogui is None:
+            result = ExecutionResult.LIBRARY_NOT_AVAILABLE
+        else:
+            try:
+                clicks = amount if direction == "up" else -amount
+                pyautogui.scroll(clicks)
+            except Exception as exc:
+                logger.error("scroll_nav failed: %s", exc)
+                result = ExecutionResult.FAILED
+
+        log = ExecutionLog(
+            timestamp=time.time(),
+            action_type=f"scroll_{direction}",
+            risk_level=RiskLevel.LOW,
+            coordinates=ActionCoordinates(button_x=0, button_y=0),
+            amount=None,
+            result=result,
+            duration=time.time() - start,
+        )
+        self.execution_logs.append(log)
+        return log
+
+
+    # ------------------------------------------------------------------
+    # full_hive_month.md Этап 3: auto-clicks on modes / tables / scroll
+    # ------------------------------------------------------------------
+
+    def click_game_mode(
+        self,
+        x: int,
+        y: int,
+        *,
+        mode_name: str = "NL Hold'em",
+        image_offset: tuple[int, int] = (0, 0),
+    ) -> ExecutionLog:
+        """Click a game-mode tab/button in the poker client lobby.
+
+        Args:
+            x:            X coordinate of the mode button (in image space).
+            y:            Y coordinate of the mode button (in image space).
+            mode_name:    Human label for logging (e.g. "NL Hold'em", "PLO").
+            image_offset: Client-area origin on screen.
+
+        Returns:
+            ExecutionLog.
+        """
+        abs_x = image_offset[0] + x
+        abs_y = image_offset[1] + y
+        coords = ActionCoordinates(button_x=abs_x, button_y=abs_y)
+        logger.info("click_game_mode: '%s' at (%d, %d)", mode_name, abs_x, abs_y)
+        return self.execute_action(
+            action_type=f"game_mode:{mode_name}",
+            coordinates=coords,
+            risk_level=RiskLevel.LOW,
+        )
+
+    def click_table_from_list(
+        self,
+        row_index: int,
+        *,
+        list_x: int = 400,
+        first_row_y: int = 200,
+        row_height: int = 24,
+        image_offset: tuple[int, int] = (0, 0),
+    ) -> ExecutionLog:
+        """Click a table row in the lobby by its index.
+
+        Uses simple geometry: ``y = first_row_y + row_index * row_height``.
+
+        Args:
+            row_index:    0-based index of the row to click.
+            list_x:       Horizontal center of the table list column.
+            first_row_y:  Y of the first visible row.
+            row_height:   Height of each row in pixels.
+            image_offset: Client-area origin.
+
+        Returns:
+            ExecutionLog.
+        """
+        target_y = first_row_y + row_index * row_height + row_height // 2
+        abs_x = image_offset[0] + list_x
+        abs_y = image_offset[1] + target_y
+        coords = ActionCoordinates(button_x=abs_x, button_y=abs_y)
+        logger.info("click_table_from_list: row %d at (%d, %d)", row_index, abs_x, abs_y)
+        return self.execute_action(
+            action_type=f"table_row:{row_index}",
+            coordinates=coords,
+            risk_level=RiskLevel.LOW,
+        )
+
+    def scroll_table_list(
+        self,
+        direction: str = "down",
+        amount: int = 5,
+    ) -> ExecutionLog:
+        """Scroll through the lobby table list.
+
+        Wrapper around :meth:`scroll_nav` with sensible defaults for
+        lobby scrolling.
+
+        Args:
+            direction: ``"down"`` or ``"up"``.
+            amount:    Number of scroll ticks.
+
+        Returns:
+            ExecutionLog.
+        """
+        logger.info("scroll_table_list: %s x%d", direction, amount)
+        return self.scroll_nav(direction=direction, amount=amount)
+
+    def click_join_button(
+        self,
+        x: int,
+        y: int,
+        *,
+        image_offset: tuple[int, int] = (0, 0),
+    ) -> ExecutionLog:
+        """Click the 'Join' / 'Sit Down' button.
+
+        Args:
+            x:            X coordinate of the button (image space).
+            y:            Y coordinate of the button (image space).
+            image_offset: Client-area origin on screen.
+
+        Returns:
+            ExecutionLog.
+        """
+        abs_x = image_offset[0] + x
+        abs_y = image_offset[1] + y
+        coords = ActionCoordinates(button_x=abs_x, button_y=abs_y)
+        logger.info("click_join_button: at (%d, %d)", abs_x, abs_y)
+        return self.execute_action(
+            action_type="join_table",
+            coordinates=coords,
+            risk_level=RiskLevel.LOW,
+        )
+
+    def execute_manipulation_action(
+        self,
+        action_type: str,
+        coordinates: ActionCoordinates,
+        *,
+        amount: Optional[float] = None,
+        strategy: str = "",
+    ) -> ExecutionLog:
+        """Execute a manipulation-engine decision as a real click.
+
+        Maps a :class:`ManipulationDecision` (action + amount) to a
+        real desktop action using the standard :meth:`execute_action`
+        pipeline (with safety / risk classification / humanization).
+
+        Args:
+            action_type:  Poker action string ("fold", "call", "raise", etc.).
+            coordinates:  Button coordinates.
+            amount:       Bet/raise amount (if applicable).
+            strategy:     Label for the manipulation strategy used.
+
+        Returns:
+            ExecutionLog.
+        """
+        logger.critical(
+            "execute_manipulation_action: %s (strategy=%s, amount=%s)",
+            action_type, strategy, amount,
+        )
+        return self.execute_action(
+            action_type=action_type,
+            coordinates=coordinates,
+            amount=amount,
+        )
 
 
 # Educational example usage

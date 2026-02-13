@@ -1,17 +1,46 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-YOLOv8 детектор карт - ЛОКАЛЬНО без интернета
+YOLOv8 детектор карт - ЛОКАЛЬНО без интернета.
+
+Phase 2 (vision_fragility.md) — расширен:
+- Multi-template fallback когда YOLO недоступен или не нашёл карты
+- Реальный OCR вместо заглушки в recognize_card_ocr()
+- Pytesseract + EasyOCR fallback pipeline
+- Colour-based suit detection
+
+⚠️ EDUCATIONAL RESEARCH ONLY.
 """
+import logging
 from PIL import Image, ImageDraw
 import numpy as np
 
 try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+try:
     from ultralytics import YOLO
     HAS_YOLO = True
-except ImportError:
+except (ImportError, OSError):
     HAS_YOLO = False
     YOLO = None
+
+try:
+    import pytesseract
+    HAS_TESSERACT = True
+except ImportError:
+    HAS_TESSERACT = False
+
+try:
+    import easyocr
+    HAS_EASYOCR = True
+except ImportError:
+    HAS_EASYOCR = False
+
+logger = logging.getLogger(__name__)
 
 
 class YoloCardDetector:
@@ -241,24 +270,222 @@ class YoloCardDetector:
     
     def recognize_card_ocr(self, image, card):
         """
-        Распознавание ранга карты через OCR
-        (Упрощённая версия - возвращает заглушку)
+        Распознавание ранга + масти карты через multi-strategy pipeline:
+
+        1. Multi-preprocessing Tesseract OCR
+        2. EasyOCR fallback
+        3. Colour-based suit detection
+
+        Args:
+            image: PIL Image
+            card: dict с x, y, w, h
+
+        Returns:
+            str: e.g. "Ah", "Ks", "?" если не распознано
         """
-        # TODO: Интеграция с Tesseract для распознавания ранга и масти
-        return "?"
-    
+        if not HAS_CV2:
+            return "?"
+
+        try:
+            img_arr = np.array(image)
+            if len(img_arr.shape) == 3 and img_arr.shape[2] == 3:
+                img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
+            else:
+                img_bgr = img_arr
+
+            x, y, w, h = card['x'], card['y'], card['w'], card['h']
+
+            # Top 35% of card (rank + suit area)
+            top_h = max(1, int(h * 0.35))
+            roi = img_bgr[y:y + top_h, x:x + w]
+            if roi.size == 0:
+                return "?"
+
+            # Scale up
+            scale = 3
+            roi = cv2.resize(roi, (w * scale, top_h * scale), interpolation=cv2.INTER_CUBIC)
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+            rank = None
+
+            # Strategy 1: Tesseract multi-preprocessing
+            if HAS_TESSERACT:
+                for preprocess in self._preprocess_variants(gray):
+                    try:
+                        text = pytesseract.image_to_string(
+                            preprocess,
+                            config='--psm 10 -c tessedit_char_whitelist=AKQJT98765432',
+                        ).strip().upper()
+                        rank = self._normalise_rank(text)
+                        if rank:
+                            break
+                    except Exception:
+                        continue
+
+            # Strategy 2: EasyOCR fallback
+            if not rank and HAS_EASYOCR:
+                try:
+                    if not hasattr(self, '_easyocr_reader'):
+                        self._easyocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+                    results = self._easyocr_reader.readtext(
+                        gray, detail=0, allowlist="AKQJT9876543210",
+                    )
+                    raw = "".join(results).strip().upper()
+                    rank = self._normalise_rank(raw)
+                except Exception:
+                    pass
+
+            # Suit detection by colour
+            suit = self._detect_suit_color(roi)
+
+            if rank:
+                return rank + (suit if suit else "")
+            return "?"
+        except Exception as e:
+            logger.debug("recognize_card_ocr failed: %s", e)
+            return "?"
+
+    # ---- OCR helpers ----
+
+    @staticmethod
+    def _preprocess_variants(gray):
+        """Return multiple preprocessed versions for OCR robustness."""
+        variants = []
+        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(otsu)
+        adapt = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
+        variants.append(adapt)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+        cl = clahe.apply(gray)
+        _, cl_otsu = cv2.threshold(cl, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(cl_otsu)
+        variants.append(cv2.bitwise_not(otsu))
+        return variants
+
+    @staticmethod
+    def _normalise_rank(raw):
+        """Normalise OCR output to single-char rank or None."""
+        aliases = {"10": "T", "1": "A", "0": "T"}
+        raw = raw.strip().upper()
+        if raw in aliases:
+            return aliases[raw]
+        if raw and raw[0] in "AKQJT98765432":
+            return raw[0]
+        return None
+
+    @staticmethod
+    def _detect_suit_color(roi_bgr):
+        """Detect suit by dominant colour."""
+        hsv = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV)
+        total = roi_bgr.shape[0] * roi_bgr.shape[1]
+        if total == 0:
+            return None
+
+        # Red → hearts
+        red_mask = cv2.inRange(hsv, np.array([0, 70, 70]), np.array([15, 255, 255]))
+        red_mask |= cv2.inRange(hsv, np.array([160, 70, 70]), np.array([180, 255, 255]))
+        if cv2.countNonZero(red_mask) / total > 0.05:
+            return "h"
+
+        # Blue → diamonds (some skins)
+        blue_mask = cv2.inRange(hsv, np.array([100, 50, 50]), np.array([130, 255, 255]))
+        if cv2.countNonZero(blue_mask) / total > 0.05:
+            return "d"
+
+        # Green → clubs (some skins)
+        green_mask = cv2.inRange(hsv, np.array([35, 40, 40]), np.array([85, 255, 255]))
+        if cv2.countNonZero(green_mask) / total > 0.05:
+            return "c"
+
+        # Default: spades (black)
+        return "s"
+
+    # ---- Template-based fallback ----
+
+    def detect_cards_template_fallback(self, image):
+        """
+        Fallback card detection using CV contours + template matching.
+
+        Used when YOLO model is unavailable or finds nothing.
+
+        Args:
+            image: PIL Image
+
+        Returns:
+            list of detection dicts
+        """
+        if not HAS_CV2:
+            return []
+
+        img_arr = np.array(image)
+        if len(img_arr.shape) == 3 and img_arr.shape[2] == 3:
+            img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
+        else:
+            img_bgr = img_arr
+
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        h_img, w_img = gray.shape[:2]
+
+        # Multi-threshold card detection
+        detections = []
+        for thresh_val in (170, 180, 190, 200):
+            _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            for cnt in contours:
+                x, y, w, h = cv2.boundingRect(cnt)
+                if w < 20 or h < 25 or w > w_img * 0.12 or h > h_img * 0.18:
+                    continue
+                ratio = h / w if w > 0 else 0
+                if not (1.1 < ratio < 1.8):
+                    continue
+                area = cv2.contourArea(cnt)
+                fill = area / (w * h) if w * h > 0 else 0
+                if fill < 0.65:
+                    continue
+
+                # Check not already found (dedup by overlap)
+                duplicate = False
+                for d in detections:
+                    if abs(d['x'] - x) < 10 and abs(d['y'] - y) < 10:
+                        duplicate = True
+                        break
+                if not duplicate:
+                    detections.append({
+                        'x': x, 'y': y, 'w': w, 'h': h,
+                        'confidence': round(fill, 2),
+                        'class': 'card_template',
+                    })
+
+        logger.info("Template fallback found %d card-like regions", len(detections))
+        return detections
+
     def detect_and_recognize(self, image):
-        """Полный цикл детекции и распознавания"""
+        """Полный цикл детекции и распознавания.
+
+        Pipeline:
+        1. YOLO detection (if available)
+        2. Template fallback (if YOLO finds nothing)
+        3. Multi-strategy OCR for rank/suit
+        """
         # Находим область стола
         self.find_table_area(image)
         
-        # Детектируем белые прямоугольники (карты)
+        # Детектируем YOLO
         all_detections = self.detect_white_rectangles(image)
-        
+
+        # Fallback: template-based detection if YOLO found nothing
+        if not all_detections:
+            logger.info("YOLO found nothing — using template fallback")
+            all_detections = self.detect_cards_template_fallback(image)
+
         # Классифицируем
         classified = self.classify_detections(all_detections)
         
-        # Распознаём (пока заглушка)
+        # Распознаём через OCR pipeline
         hero_cards = [self.recognize_card_ocr(image, c) for c in classified['hero']]
         board_cards = [self.recognize_card_ocr(image, c) for c in classified['board']]
         

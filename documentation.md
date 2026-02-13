@@ -1,5 +1,5 @@
 
-#### Roadmap for Documentation 4/10 (documentation.md)
+#### 7. Roadmap for Documentation 4/10 (documentation.md)
 
 ```markdown
 # documentation.md — Улучшение документации
@@ -7,12 +7,12 @@
 Цель: полный README + гайды.
 
 ## Фаза 1 — README update
-- Как запускать live, флаги, ROI
+- Обновить README.md — запуск live, флаги, ROI
 
 ## Фаза 2 — Гайды
-- Vision setup, bot profiles, troubleshooting
+- Добавить LIVE_SETUP.md, BOT_CONFIG.md, TROUBLESHOOTING.md
 
 ## Фаза 3 — API docs
-- Для hub, decision
-- Тест: генерировать docs с pdoc
+- Генерировать docs с pdoc for hub, decision
+- Тест: проверить сгенерированные docs
 

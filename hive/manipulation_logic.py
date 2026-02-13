@@ -1,5 +1,6 @@
 """
 Manipulation Logic - Educational Game Theory Research (Roadmap5 Phase 3).
+Extended: full_hive_month.md Этап 3 — enhanced 3vs1 aggression.
 
 ⚠️ CRITICAL ETHICAL WARNING:
     This implements COORDINATED MANIPULATION (3vs1) for research.
@@ -17,6 +18,10 @@ Features:
 - Team coordination (no bluffing against teammates)
 - Opponent exploitation
 - Real-time decision coordination
+- **Этап 3**: street-aware escalation (flop < turn < river aggression)
+- **Этап 3**: decision statistics tracking per strategy
+- **Этап 3**: dynamic aggression factor based on opponent profile
+- **Этап 3**: coordinated trap with check-raise signals
 """
 
 from __future__ import annotations
@@ -145,6 +150,10 @@ class ManipulationEngine:
             protective_threshold=fold_threshold
         )
         
+        # Этап 3: statistics
+        self._decisions_count: int = 0
+        self._strategy_counts: Dict[str, int] = {}
+
         if enable_manipulation:
             logger.critical(
                 "MANIPULATION ENGINE ENABLED - "
@@ -413,6 +422,209 @@ class ManipulationEngine:
             confidence=collective_decision.confidence
         )
     
+    # ------------------------------------------------------------------
+    # full_hive_month.md Этап 3: coordinated trap with check-raise
+    # ------------------------------------------------------------------
+
+    def _coordinated_trap(
+        self,
+        context: ManipulationContext,
+    ) -> ManipulationDecision:
+        """Coordinated trap: check to the opponent, then check-raise.
+
+        Used when equity is above aggressive_threshold and we have
+        position or the acting bot is the first to act.
+
+        Args:
+            context: Manipulation context.
+
+        Returns:
+            ManipulationDecision.
+        """
+        equity = context.collective_state.collective_equity
+
+        if context.to_call == 0 and context.can_raise:
+            # We act first: check (to induce a bet)
+            return ManipulationDecision(
+                action=ActionType.CHECK,
+                strategy=ManipulationStrategy.COORDINATED_TRAP,
+                reasoning=(
+                    f"TRAP: Equity {equity:.1%}. Check to induce opponent bet, "
+                    f"teammate will check-raise."
+                ),
+                coordination_signal="TRAP_CHECK",
+                confidence=0.88,
+            )
+
+        if context.to_call > 0 and context.can_raise:
+            # Opponent bet: now raise big
+            amount = context.pot_size * 2.0
+            return ManipulationDecision(
+                action=ActionType.RAISE,
+                strategy=ManipulationStrategy.COORDINATED_TRAP,
+                amount=amount,
+                reasoning=(
+                    f"TRAP: Opponent bet. Check-raise with equity {equity:.1%}. "
+                    f"Raise 2x pot."
+                ),
+                coordination_signal="TRAP_RAISE",
+                confidence=0.92,
+            )
+
+        # Fallback
+        return ManipulationDecision(
+            action=ActionType.CALL,
+            strategy=ManipulationStrategy.COORDINATED_TRAP,
+            reasoning=f"TRAP: Call with equity {equity:.1%}.",
+            confidence=0.75,
+        )
+
+    def _isolation(
+        self,
+        context: ManipulationContext,
+    ) -> ManipulationDecision:
+        """Isolation strategy: force opponent heads-up vs best hand.
+
+        Team signal: weakest hands fold, strongest hand raises big.
+
+        Args:
+            context: Manipulation context.
+
+        Returns:
+            ManipulationDecision.
+        """
+        equity = context.collective_state.collective_equity
+
+        # If we have teammates in hand and opponent present, isolate
+        if context.opponent_in_hand and len(context.teammates_in_hand) >= 1:
+            if context.can_raise:
+                amount = context.pot_size * 1.2
+                return ManipulationDecision(
+                    action=ActionType.RAISE,
+                    strategy=ManipulationStrategy.ISOLATION,
+                    amount=amount,
+                    reasoning=(
+                        f"ISOLATION: Raise to isolate opponent. "
+                        f"Teammates should fold to create heads-up."
+                    ),
+                    coordination_signal="ISOLATE_RAISE",
+                    confidence=0.85,
+                )
+
+        # Not applicable → fallback to pot building
+        return self._pot_building(context)
+
+    # ------------------------------------------------------------------
+    # Этап 3: street-aware escalation
+    # ------------------------------------------------------------------
+
+    _STREET_AGGRESSION_FACTOR: Dict[str, float] = {
+        "preflop": 0.8,
+        "flop": 1.0,
+        "turn": 1.2,
+        "river": 1.5,
+    }
+
+    def _street_multiplier(self, street: str) -> float:
+        """Return aggression multiplier for the current street."""
+        return self._STREET_AGGRESSION_FACTOR.get(street.lower(), 1.0)
+
+    # ------------------------------------------------------------------
+    # Этап 3: enhanced decide() with escalation, trap, isolation
+    # ------------------------------------------------------------------
+
+    def decide_enhanced(
+        self,
+        context: ManipulationContext,
+        *,
+        opponent_fold_pct: float = 0.50,
+    ) -> ManipulationDecision:
+        """Enhanced decision with street-aware escalation and dynamic factors.
+
+        Extends :meth:`decide` with:
+          - Street-based aggression multiplier
+          - Opponent fold% → adjust sizing
+          - Trap/Isolation strategies for wider edge brackets
+          - Per-strategy statistics
+
+        Args:
+            context:          Manipulation context.
+            opponent_fold_pct: Estimated fold probability of the opponent
+                               (0.0–1.0). Higher → we can bluff more.
+
+        Returns:
+            ManipulationDecision.
+        """
+        if not self.enable_manipulation:
+            return self._decide_conservative(context)
+
+        equity = context.collective_state.collective_equity
+        street_mult = self._street_multiplier(context.street)
+        adjusted_equity = min(1.0, equity * street_mult)
+
+        # Track decision
+        self._decisions_count += 1
+
+        # CRITICAL: Log
+        logger.critical(
+            "3vs1 ENHANCED: team=%s eq=%.1f%% adj_eq=%.1f%% street=%s opp_fold=%.0f%%",
+            context.team_id[:8], equity * 100, adjusted_equity * 100,
+            context.street, opponent_fold_pct * 100,
+        )
+
+        # 1. Very high adjusted equity (>75%) + opponent folds often → ALL-IN squeeze
+        if adjusted_equity >= 0.75 and context.opponent_in_hand:
+            self._strategy_counts["aggressive_squeeze"] = (
+                self._strategy_counts.get("aggressive_squeeze", 0) + 1
+            )
+            decision = self._aggressive_squeeze(context)
+            # Scale amount by street multiplier
+            if decision.amount is not None:
+                decision.amount *= street_mult
+            return decision
+
+        # 2. High equity (>65%) → trap or squeeze
+        if adjusted_equity >= self.aggressive_threshold:
+            # Use trap if we act first (to_call == 0) on turn/river
+            if (context.to_call == 0 and context.street in ("turn", "river")
+                    and context.opponent_in_hand):
+                self._strategy_counts["coordinated_trap"] = (
+                    self._strategy_counts.get("coordinated_trap", 0) + 1
+                )
+                return self._coordinated_trap(context)
+
+            self._strategy_counts["aggressive_squeeze"] = (
+                self._strategy_counts.get("aggressive_squeeze", 0) + 1
+            )
+            decision = self._aggressive_squeeze(context)
+            if decision.amount is not None:
+                decision.amount *= street_mult
+            return decision
+
+        # 3. Medium-high (55–65%) + opponent folds > 60% → isolation
+        if 0.55 <= equity < self.aggressive_threshold and opponent_fold_pct > 0.60:
+            self._strategy_counts["isolation"] = (
+                self._strategy_counts.get("isolation", 0) + 1
+            )
+            return self._isolation(context)
+
+        # 4. Low equity → controlled fold
+        if adjusted_equity < self.fold_threshold:
+            self._strategy_counts["controlled_fold"] = (
+                self._strategy_counts.get("controlled_fold", 0) + 1
+            )
+            return self._controlled_fold(context)
+
+        # 5. Medium equity → pot building
+        self._strategy_counts["pot_building"] = (
+            self._strategy_counts.get("pot_building", 0) + 1
+        )
+        return self._pot_building(context)
+
+    # ------------------------------------------------------------------
+    # Этап 3: statistics
+    # ------------------------------------------------------------------
+
     def get_statistics(self) -> dict:
         """
         Get manipulation statistics.
@@ -423,7 +635,9 @@ class ManipulationEngine:
         return {
             'aggressive_threshold': self.aggressive_threshold,
             'fold_threshold': self.fold_threshold,
-            'manipulation_enabled': self.enable_manipulation
+            'manipulation_enabled': self.enable_manipulation,
+            'decisions_count': self._decisions_count,
+            'strategy_counts': dict(self._strategy_counts),
         }
 
 

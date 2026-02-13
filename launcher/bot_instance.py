@@ -1,5 +1,5 @@
 """
-Bot Instance - Launcher Application (Roadmap6 Phase 2).
+Bot Instance - Launcher Application (Roadmap6 Phase 2 + settings.md Phase 2 + account_binding.md Phase 2).
 
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 
@@ -8,6 +8,10 @@ Features:
 - Vision → Decision → Action cycle
 - Status tracking
 - Statistics collection
+- Per-bot profile loading from BotProfileManager (settings.md Phase 2)
+- On-the-fly profile switching
+- Profile → BotSettings conversion
+- Account binding: load binding at start, auto-bind window (account_binding.md Phase 2)
 """
 
 import asyncio
@@ -15,12 +19,31 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from pathlib import Path
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from launcher.models.account import Account
 from launcher.models.roi_config import ROIConfig
 from launcher.bot_settings import BotSettings
+
+# Graceful import of profile manager (settings.md Phase 1)
+try:
+    from launcher.bot_profile_manager import BotProfileManager, BotProfile
+    HAS_PROFILE_MANAGER = True
+except (ImportError, Exception):
+    HAS_PROFILE_MANAGER = False
+
+# Graceful import of account binder (account_binding.md Phase 2)
+try:
+    from launcher.bot_account_binder import (
+        BotAccountBinder,
+        Binding,
+        BindStatus,
+    )
+    HAS_ACCOUNT_BINDER = True
+except (ImportError, Exception):
+    HAS_ACCOUNT_BINDER = False
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +117,16 @@ class BotInstance:
     stats: BotStatistics = field(default_factory=BotStatistics)
     start_time: Optional[float] = None
     error_message: str = ""
-    
+
+    # Per-bot profile (settings.md Phase 2)
+    profile_name: str = ""
+    _profile: Optional[Any] = field(default=None, repr=False)
+    _profile_manager: Optional[Any] = field(default=None, repr=False)
+
+    # Account binding (account_binding.md Phase 2)
+    _binding: Optional[Any] = field(default=None, repr=False)
+    _binder: Optional[Any] = field(default=None, repr=False)
+
     # Internal state
     _running: bool = False
     _task: Optional[asyncio.Task] = None
@@ -115,7 +147,172 @@ class BotInstance:
             self.account is not None and
             self.account.is_ready_to_run()
         )
-    
+
+    # -- Per-bot profile loading (settings.md Phase 2) -----------------------
+
+    def load_profile(
+        self,
+        profile_name: str,
+        manager: Optional[Any] = None,
+    ) -> bool:
+        """Load a named profile and apply its settings.
+
+        Args:
+            profile_name: Profile key (e.g. "shark", "tag").
+            manager: Optional BotProfileManager instance.
+                     If not provided, uses self._profile_manager or creates
+                     a default one from ``config/bot_profiles.json``.
+
+        Returns:
+            True if profile was loaded successfully.
+        """
+        if not HAS_PROFILE_MANAGER:
+            logger.warning("BotProfileManager not available — cannot load profile")
+            return False
+
+        mgr = manager or self._profile_manager
+        if mgr is None:
+            mgr = BotProfileManager()
+            self._profile_manager = mgr
+
+        profile = mgr.get_profile(profile_name)
+        if profile is None:
+            logger.warning("Profile '%s' not found", profile_name)
+            return False
+
+        settings = mgr.profile_to_settings(profile_name)
+        if settings is None:
+            return False
+
+        self.settings = settings
+        self.profile_name = profile_name
+        self._profile = profile
+        mgr.set_active_profile(self.bot_id, profile_name)
+
+        logger.info(
+            "Bot %s loaded profile '%s' (aggression=%d, equity=%.2f)",
+            self.bot_id[:8], profile_name,
+            settings.aggression_level, settings.equity_threshold,
+        )
+        return True
+
+    def switch_profile(self, profile_name: str) -> bool:
+        """Switch to a different profile on the fly.
+
+        Same as load_profile but logs the transition.
+        """
+        old = self.profile_name or "(none)"
+        ok = self.load_profile(profile_name)
+        if ok:
+            logger.info("Bot %s switched profile: %s → %s",
+                        self.bot_id[:8], old, profile_name)
+        return ok
+
+    def get_profile(self) -> Optional[Any]:
+        """Return the currently loaded BotProfile (or None)."""
+        return self._profile
+
+    def get_profile_dict(self) -> Dict[str, Any]:
+        """Return current profile as dict (for UI / API)."""
+        if self._profile and hasattr(self._profile, "to_dict"):
+            return self._profile.to_dict()
+        return {}
+
+    # -- Account binding (account_binding.md Phase 2) -------------------------
+
+    def load_binding(
+        self,
+        binder: Optional[Any] = None,
+        *,
+        auto_bind: bool = True,
+    ) -> bool:
+        """Load account binding at startup.
+
+        Looks up or creates a binding for this bot in the
+        :class:`BotAccountBinder`. If *auto_bind* is True, also tries
+        to discover the window automatically by nickname.
+
+        Args:
+            binder: Optional BotAccountBinder instance.
+                    If not provided, uses self._binder or creates a default.
+            auto_bind: Attempt window auto-discovery.
+
+        Returns:
+            True if a binding is associated (even if window not yet found).
+        """
+        if not HAS_ACCOUNT_BINDER:
+            logger.warning("BotAccountBinder not available — cannot load binding")
+            return False
+
+        mgr = binder or self._binder
+        if mgr is None:
+            mgr = BotAccountBinder(auto_save=False)
+            self._binder = mgr
+
+        nickname = self.account.nickname if self.account else ""
+        room = self.account.room if self.account else ""
+        account_id = self.account.account_id if self.account else ""
+
+        # Use bind_from_account if we have an account object
+        if self.account is not None:
+            binding = mgr.bind_from_account(
+                self.bot_id,
+                self.account,
+                auto_find=auto_bind,
+            )
+        else:
+            binding = mgr.bind(
+                self.bot_id,
+                nickname=nickname,
+                room=room,
+                account_id=account_id,
+            )
+            if auto_bind:
+                mgr.auto_bind(self.bot_id)
+                binding = mgr.get(self.bot_id) or binding
+
+        self._binding = binding
+        self._binder = mgr
+        logger.info(
+            "Bot %s binding loaded: nickname=%r window=%r status=%s",
+            self.bot_id[:8],
+            binding.nickname,
+            binding.title or "(none)",
+            binding.status.value,
+        )
+        return True
+
+    def get_binding(self) -> Optional[Any]:
+        """Return the current Binding or None."""
+        return self._binding
+
+    def get_binding_dict(self) -> Dict[str, Any]:
+        """Return current binding as dict (for UI / API)."""
+        if self._binding and hasattr(self._binding, "to_dict"):
+            return self._binding.to_dict()
+        return {}
+
+    def check_binding_health(self) -> Optional[str]:
+        """Check if bound window is still alive.
+
+        Returns status string or None if no binder.
+        """
+        if not HAS_ACCOUNT_BINDER or self._binder is None:
+            return None
+        status = self._binder.check_health(self.bot_id)
+        if self._binding:
+            self._binding = self._binder.get(self.bot_id) or self._binding
+        return status.value if hasattr(status, "value") else str(status)
+
+    def rebind_window(self) -> bool:
+        """Try to re-discover the window (e.g. after poker client restart)."""
+        if not HAS_ACCOUNT_BINDER or self._binder is None:
+            return False
+        result = self._binder.auto_bind(self.bot_id)
+        if result:
+            self._binding = result
+        return result is not None and result.is_bound
+
     async def start(self):
         """
         Start bot instance.
@@ -134,6 +331,13 @@ class BotInstance:
         self._running = True
         self.status = BotStatus.STARTING
         self.start_time = time.time()
+
+        # Load account binding at start (account_binding.md Phase 2)
+        if self._binding is None and HAS_ACCOUNT_BINDER:
+            try:
+                self.load_binding()
+            except Exception as exc:
+                logger.warning("Failed to load binding at start: %s", exc)
         
         # Create async task
         self._task = asyncio.create_task(self._run_loop())
@@ -210,6 +414,8 @@ class BotInstance:
             'current_table': self.current_table,
             'stack': self.stack,
             'collective_edge': self.collective_edge,
+            'profile_name': self.profile_name,
+            'binding': self.get_binding_dict(),
             'settings': self.settings.to_dict(),
             'stats': {
                 'hands_played': self.stats.hands_played,

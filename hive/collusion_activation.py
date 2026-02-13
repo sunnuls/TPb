@@ -1,5 +1,6 @@
 """
 Collusion Activation System - Educational Game Theory Research (Roadmap5 Phase 2).
+Extended: full_hive_month.md Этап 2 — auto-activation when 3 bots seated.
 
 ⚠️ CRITICAL ETHICAL WARNING:
     This activates COLLUSION mode for coordinated teams.
@@ -15,6 +16,8 @@ Features:
 - Safety validation
 - Mode switching
 - Audit logging
+- **Этап 2**: auto_check_and_activate() — scan tables, auto-activate when 3 bots seated
+- **Этап 2**: auto_exchange_cards() — trigger card exchange upon activation
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional
 
-from hive.bot_pool import BotPool, HiveTeam
+from hive.bot_pool import BotPool, BotStatus, HiveTeam
 from hive.card_sharing import CardSharingSystem
 
 logger = logging.getLogger(__name__)
@@ -376,8 +379,121 @@ class CollusionActivator:
             'total_hands_played': total_hands,
             'total_shares_exchanged': total_shares,
             'require_confirmation': self.require_confirmation,
-            'auto_activate': self.auto_activate
+            'auto_activate': self.auto_activate,
+            'auto_activations': getattr(self, '_auto_activations', 0),
         }
+
+    # ------------------------------------------------------------------
+    # full_hive_month.md Этап 2: auto-activation when 3 bots seated
+    # ------------------------------------------------------------------
+
+    def auto_check_and_activate(self) -> List[CollusionSession]:
+        """Scan all teams and auto-activate collusion when 3 bots are seated.
+
+        Iterates through every team in the bot pool. For each active team
+        that has all 3 bots seated at the same table and has no existing
+        session, auto-activates collusion.
+
+        Returns:
+            List of newly activated :class:`CollusionSession` objects.
+        """
+        if not hasattr(self, '_auto_activations'):
+            self._auto_activations = 0
+
+        newly_activated: List[CollusionSession] = []
+
+        for team in self.bot_pool.teams.values():
+            if not team.active:
+                continue
+
+            # Skip if session already exists
+            if team.team_id in self.sessions:
+                continue
+
+            # Check all 3 bots seated at the same table
+            if not self._all_bots_seated(team):
+                continue
+
+            # Force-activate (bypass confirmation for auto mode)
+            ok = self.activate_collusion(team, force=True)
+            if ok:
+                self._auto_activations += 1
+                session = self.sessions.get(team.team_id)
+                if session:
+                    newly_activated.append(session)
+                    logger.critical(
+                        "AUTO-ACTIVATED collusion for team %s at table %s",
+                        team.team_id[:8], team.table_id,
+                    )
+
+        return newly_activated
+
+    def _all_bots_seated(self, team: "HiveTeam") -> bool:
+        """Check if all bots in a team are seated at the team's table."""
+        for bot_id in team.bot_ids:
+            bot = self.bot_pool.bots.get(bot_id)
+            if not bot:
+                return False
+            if bot.current_table != team.table_id:
+                return False
+            if bot.status not in (BotStatus.SEATED, BotStatus.PLAYING):
+                return False
+        return True
+
+    def auto_exchange_cards(
+        self,
+        team_id: str,
+        card_map: Dict[str, List[str]],
+        *,
+        hand_id: str = "",
+    ) -> bool:
+        """Trigger full card exchange for an active collusion session.
+
+        Args:
+            team_id:  Team identifier.
+            card_map: Mapping ``bot_id → [card1, card2]``.
+            hand_id:  Optional hand identifier.
+
+        Returns:
+            True if all shares were received and exchange is complete.
+        """
+        session = self.sessions.get(team_id)
+        if not session or not session.is_active():
+            logger.warning("auto_exchange_cards: no active session for %s", team_id)
+            return False
+
+        table_id = session.table_id
+        shares_ok = 0
+
+        for bot_id, hole_cards in card_map.items():
+            if bot_id not in session.bot_ids:
+                logger.warning("Bot %s not in team %s — skipping", bot_id, team_id)
+                continue
+
+            share = self.card_sharing.create_share(
+                bot_id=bot_id,
+                team_id=team_id,
+                table_id=table_id,
+                hole_cards=hole_cards,
+                hand_id=hand_id,
+            )
+            self.card_sharing.receive_share(share)
+            session.record_share()
+            shares_ok += 1
+
+        # Check completeness
+        knowledge = self.card_sharing.get_team_knowledge(
+            team_id, table_id, hand_id,
+        )
+        complete = knowledge.is_complete(expected_bots=len(session.bot_ids)) if knowledge else False
+
+        if complete:
+            logger.info(
+                "Full exchange complete for team %s: %d cards known",
+                team_id[:8], len(knowledge.known_cards),
+            )
+
+        return complete
 
 
 # Educational example

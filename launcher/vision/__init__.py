@@ -7,7 +7,14 @@ Vision Module - Automatic UI Detection & Auto-Calibration.
 from launcher.vision.auto_ui_detector import AutoUIDetector, UIElement, UIElementType
 from launcher.vision.auto_navigator import AutoNavigator, NavigationResult
 from launcher.vision.window_capturer import WindowCapturer
-from launcher.vision.auto_roi_finder import AutoROIFinder, CalibrationResult, Anchor, AnchorType
+from launcher.vision.auto_roi_finder import (
+    AutoROIFinder,
+    CalibrationResult,
+    Anchor,
+    AnchorType,
+    TemplateBank as ROITemplateBank,
+    TemplateEntry as ROITemplateEntry,
+)
 from launcher.vision.multi_template_matching import (
     TemplateBank,
     MultiTemplateMatcher,

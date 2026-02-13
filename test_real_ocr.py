@@ -21,7 +21,7 @@ try:
     import pygetwindow as gw
     import mss
     HAS_LIVE = True
-except ImportError:
+except (ImportError, SyntaxError, Exception):
     HAS_LIVE = False
 
 # Если Tesseract не в PATH, укажите путь вручную (Windows):
@@ -34,19 +34,111 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+try:
+    import easyocr
+    HAS_EASYOCR = True
+except ImportError:
+    HAS_EASYOCR = False
+
+# Lazy EasyOCR reader
+_easyocr_reader = None
+
+
+def _get_easyocr_reader():
+    global _easyocr_reader
+    if _easyocr_reader is None and HAS_EASYOCR:
+        _easyocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+    return _easyocr_reader
+
+
+def _preprocess_for_ocr(pil_img: Image.Image) -> list:
+    """Return multiple preprocessed PIL Images for OCR robustness."""
+    results = [pil_img]
+    if not HAS_CV2:
+        return results
+
+    arr = np.array(pil_img)
+    if len(arr.shape) == 3:
+        gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = arr
+
+    # 1) Otsu
+    _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    results.append(Image.fromarray(otsu))
+
+    # 2) CLAHE + Otsu
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    cl = clahe.apply(gray)
+    _, cl_otsu = cv2.threshold(cl, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    results.append(Image.fromarray(cl_otsu))
+
+    # 3) Adaptive threshold
+    adapt = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                   cv2.THRESH_BINARY, 11, 2)
+    results.append(Image.fromarray(adapt))
+
+    # 4) Inverted Otsu
+    results.append(Image.fromarray(cv2.bitwise_not(otsu)))
+
+    return results
+
+
 def extract_text_from_roi(image: Image.Image, roi: dict) -> str:
-    """Извлечение текста из зоны ROI"""
+    """Извлечение текста из зоны ROI.
+
+    Multi-strategy pipeline (Phase 2 vision_fragility.md):
+    1. Tesseract с multi-preprocessing (Otsu, CLAHE, Adaptive)
+    2. EasyOCR fallback
+    3. Голосование по результатам
+    """
     x, y, w, h = roi['x'], roi['y'], roi['w'], roi['h']
-    
+
     # Вырезаем зону
     cropped = image.crop((x, y, x + w, y + h))
-    
-    # Сохраняем для отладки
-    # cropped.save(f'debug_roi_{x}_{y}.png')
-    
-    # Распознаем текст
-    text = pytesseract.image_to_string(cropped, config='--psm 10')
-    return text.strip()
+
+    # Scale up for better accuracy
+    scale = 2
+    cropped = cropped.resize((cropped.width * scale, cropped.height * scale), Image.LANCZOS)
+
+    candidates = []
+
+    # Strategy 1: Tesseract with multiple preprocessings
+    for variant in _preprocess_for_ocr(cropped):
+        try:
+            text = pytesseract.image_to_string(variant, config='--psm 10').strip()
+            if text:
+                candidates.append(text)
+        except Exception:
+            pass
+
+    # Strategy 2: EasyOCR fallback
+    reader = _get_easyocr_reader()
+    if reader is not None:
+        try:
+            arr = np.array(cropped.convert('L'))
+            results = reader.readtext(arr, detail=0)
+            easyocr_text = " ".join(results).strip()
+            if easyocr_text:
+                candidates.append(easyocr_text)
+        except Exception:
+            pass
+
+    # Voting: pick the most common non-empty result
+    if candidates:
+        from collections import Counter
+        counter = Counter(c for c in candidates if c)
+        if counter:
+            return counter.most_common(1)[0][0]
+
+    return ""
 
 
 def visualize_zones(image: Image.Image, rois: dict, output_path: str = 'zones_visualization.png'):
@@ -323,26 +415,156 @@ def live_mode(config_path, interval=3):
         print("\n\n⏹️  Остановка...\n")
 
 
+# ---------------------------------------------------------------------------
+# Lobby OCR — Phase 1 (lobby_scanner.md)
+# ---------------------------------------------------------------------------
+
+def generate_synthetic_lobby(width: int = 1200, height: int = 700) -> Image.Image:
+    """Generate a synthetic lobby screenshot for testing OCR.
+
+    Creates a fake table list with player names, stakes, and seat counts.
+    Returns a PIL Image.
+    """
+    if not HAS_CV2:
+        # Simple PIL-only fallback
+        img = Image.new('RGB', (width, height), (30, 30, 40))
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except Exception:
+            font = ImageFont.load_default()
+
+        tables_data = [
+            ("Mercury",    "$0.01/$0.02", "NL Hold'em", "6/9"),
+            ("Venus",      "$0.05/$0.10", "NL Hold'em", "4/6"),
+            ("Earth",      "$0.10/$0.25", "PLO",        "8/9"),
+            ("Mars",       "$0.25/$0.50", "NL Hold'em", "3/6"),
+            ("Jupiter",    "$0.50/$1.00", "NL Hold'em", "9/9"),
+            ("Saturn",     "$1/$2",       "NL Hold'em", "5/9"),
+            ("Uranus",     "$2/$5",       "PLO",        "2/6"),
+            ("Neptune",    "$5/$10",      "NL Hold'em", "7/9"),
+        ]
+
+        # Header
+        draw.text((20, 10), "Table Name      Stakes        Game         Players", fill=(200, 200, 200), font=font)
+        draw.line([(10, 35), (width - 10, 35)], fill=(80, 80, 80), width=1)
+
+        y = 45
+        row_h = int((height - 60) / len(tables_data))
+        for name, stakes, game, players in tables_data:
+            line = f"{name:16s}{stakes:14s}{game:13s}{players}"
+            draw.text((20, y + 5), line, fill=(220, 220, 220), font=font)
+            draw.line([(10, y + row_h - 2), (width - 10, y + row_h - 2)], fill=(50, 50, 50), width=1)
+            y += row_h
+
+        return img
+
+    # OpenCV version — sharper text rendering
+    img = np.full((height, width, 3), (40, 30, 30), dtype=np.uint8)
+
+    tables_data = [
+        ("Mercury",    "$0.01/$0.02", "NL Hold'em", "6/9"),
+        ("Venus",      "$0.05/$0.10", "NL Hold'em", "4/6"),
+        ("Earth",      "$0.10/$0.25", "PLO",        "8/9"),
+        ("Mars",       "$0.25/$0.50", "NL Hold'em", "3/6"),
+        ("Jupiter",    "$0.50/$1.00", "NL Hold'em", "9/9"),
+        ("Saturn",     "$1/$2",       "NL Hold'em", "5/9"),
+        ("Uranus",     "$2/$5",       "PLO",        "2/6"),
+        ("Neptune",    "$5/$10",      "NL Hold'em", "7/9"),
+    ]
+
+    # Header
+    header = "Table Name        Stakes          Game           Players"
+    cv2.putText(img, header, (15, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
+    cv2.line(img, (10, 38), (width - 10, 38), (80, 80, 80), 1)
+
+    row_h = (height - 55) // len(tables_data)
+    y = 50
+    for name, stakes, game, players in tables_data:
+        line = f"{name:18s}{stakes:16s}{game:15s}{players}"
+        cv2.putText(img, line, (15, y + row_h // 2 + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (220, 220, 220), 1)
+        cv2.line(img, (10, y + row_h - 1), (width - 10, y + row_h - 1), (50, 50, 50), 1)
+        y += row_h
+
+    # Convert BGR → RGB PIL
+    return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+
+def test_lobby_ocr(screenshot_path: str | None = None):
+    """Test lobby OCR — scan an actual or synthetic lobby screenshot.
+
+    Phase 1 of lobby_scanner.md: recognise players/seats in the lobby.
+    """
+    from live_capture import LobbyCaptureScanner, LobbyScanResult
+
+    print("=" * 60)
+    print("  LOBBY OCR TEST")
+    print("=" * 60)
+
+    if screenshot_path and Path(screenshot_path).exists():
+        print(f"\n  Screenshot: {screenshot_path}")
+        image = Image.open(screenshot_path)
+    else:
+        print("\n  Using synthetic lobby image")
+        image = generate_synthetic_lobby()
+        image.save("lobby_synthetic_test.png")
+        print("  Saved: lobby_synthetic_test.png")
+
+    scanner = LobbyCaptureScanner()
+    result: LobbyScanResult = scanner.scan_image(image)
+
+    print(f"\n  Rows detected: {result.total_rows_detected}")
+    print(f"  Tables parsed: {result.table_count}")
+    print(f"  OCR confidence: {result.ocr_confidence:.0%}")
+    print(f"  Elapsed: {result.elapsed_ms:.0f} ms")
+
+    if result.error:
+        print(f"\n  ERROR: {result.error}")
+
+    if result.tables:
+        print(f"\n  {'Table':20s} {'Stakes':14s} {'Seats':8s} {'Game'}")
+        print("  " + "-" * 55)
+        for t in result.tables:
+            seats = f"{t.players}/{t.max_players}" if t.max_players else str(t.players)
+            print(f"  {t.name:20s} {t.stakes:14s} {seats:8s} {t.game_type}")
+    else:
+        print("\n  No tables found")
+
+    avail = result.available_tables(min_seats=1)
+    print(f"\n  Available tables (>= 1 seat free): {len(avail)}")
+
+    print("\n" + "=" * 60)
+    print("  TEST COMPLETE")
+    print("=" * 60)
+
+
 if __name__ == '__main__':
     import argparse
     
-    parser = argparse.ArgumentParser(description='OCR тест и Live-режим')
+    parser = argparse.ArgumentParser(description='OCR тест, Live-режим и Lobby сканер')
     parser.add_argument('screenshot', nargs='?', help='Путь к скриншоту (для теста)')
     parser.add_argument('config', nargs='?', default='stol/poker_table_config (1).yaml', help='Путь к конфигу')
     parser.add_argument('--live', action='store_true', help='Live-режим с захватом окна')
+    parser.add_argument('--lobby', action='store_true',
+                        help='Lobby OCR test — распознавание таблиц лобби')
     parser.add_argument('--interval', type=float, default=3.0, help='Интервал обновления (сек)')
     
     args = parser.parse_args()
     
+    # Lobby OCR test
+    if args.lobby:
+        test_lobby_ocr(args.screenshot)
+
     # Live-режим
-    if args.live:
+    elif args.live:
         if not HAS_LIVE:
-            print("❌ Для live-режима установите:")
+            print("Для live-режима установите:")
             print("   pip install pygetwindow mss")
             sys.exit(1)
         
         if not Path(args.config).exists():
-            print(f"❌ Конфиг не найден: {args.config}")
+            print(f"Конфиг не найден: {args.config}")
             sys.exit(1)
         
         live_mode(args.config, args.interval)
@@ -353,19 +575,20 @@ if __name__ == '__main__':
         config_path = args.config
         
         if not Path(screenshot_path).exists():
-            print(f"❌ Скриншот не найден: {screenshot_path}")
-            print(f"\n💡 Использование:")
+            print(f"Скриншот не найден: {screenshot_path}")
+            print(f"\n  Использование:")
             print(f"   Тест: python test_real_ocr.py <скриншот> <конфиг>")
             print(f"   Live: python test_real_ocr.py --live --config <конфиг>")
+            print(f"   Lobby: python test_real_ocr.py --lobby [скриншот]")
             sys.exit(1)
         
         if not Path(config_path).exists():
-            print(f"❌ Конфиг не найден: {config_path}")
+            print(f"Конфиг не найден: {config_path}")
             sys.exit(1)
         
         try:
             test_ocr_on_screenshot(screenshot_path, config_path)
         except Exception as e:
-            print(f"\n❌ ОШИБКА: {e}")
+            print(f"\nОШИБКА: {e}")
             import traceback
             traceback.print_exc()

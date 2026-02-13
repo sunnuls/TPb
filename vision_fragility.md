@@ -1,17 +1,14 @@
-# vision_fragility.md — Улучшение стабильности vision
+Цель: сделать vision надёжным на разных скинах, разрешениях, темах, румах.
 
-Цель: сделать vision надёжным на разных скинах, разрешениях, темах.
-
-## Фаза 1 — Auto-calibration
-- Добавить auto_roi_finder.py — поиск зон по anchors (кнопки, logos)
-- Тест: 10 разных скриншотов → авто-наход ROI
+## Фаза 1 — Auto-calibration ROI
+- Добавить auto_roi_finder.py — поиск зон по anchors (кнопки, logos, using opencv matchTemplate)
 
 ## Фаза 2 — Multi-template fallback
-- Добавить multi_template_matching.py — несколько шаблонов для карт/чисел
-- Fine-tune OCR (EasyOCR / Tesseract)
+- Расширить card_detector.py и yolo_detector.py — несколько шаблонов для карт/чисел (templates/cards/ folder)
+- Fine-tune OCR (pytesseract + EasyOCR fallback in test_real_ocr.py)
 
-## Фаза 3 — ML-улучшения
-- Интегрировать YOLOv8 для регионов
-- Датасет 1000+ скриншотов — дообучение
-- Тест: точность >95%
+## Фаза 3 — ML-doobuchenie
+- Добавить training_data_collector.py — сбор 1000+ скриншотов (using live_capture.py)
+- Дообучить YOLOv8 / Roboflow (roboflow_detector.py)
+- Тест: точность >95% на 200 скриншотах (test_model_with_image.py)
 

@@ -5,11 +5,16 @@ Generates 10 synthetic poker table screenshots (different skins,
 resolutions, themes) and verifies that auto-calibration finds
 critical ROI zones.
 
+Also tests **TemplateBank** and multi-scale ``cv2.matchTemplate``
+anchor detection.
+
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 """
 
 import math
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
@@ -21,8 +26,16 @@ try:
 except ImportError:
     CV_AVAILABLE = False
 
-if CV_AVAILABLE:
-    from launcher.vision.auto_roi_finder import AutoROIFinder, CalibrationResult
+try:
+    from launcher.vision.auto_roi_finder import (
+        AnchorType,
+        AutoROIFinder,
+        CalibrationResult,
+        TemplateBank,
+        TemplateEntry,
+    )
+except Exception:
+    CV_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +250,8 @@ class TestAutoROIFinder(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.finder = AutoROIFinder(use_ocr=False)  # OCR off for synthetic tests
+        # OCR & templates off for fast synthetic tests (template tests in TestTemplateMatching)
+        cls.finder = AutoROIFinder(use_ocr=False, use_templates=False)
         cls.results = {}
         for cfg in TABLE_CONFIGS:
             name = cfg.pop("name")
@@ -390,6 +404,287 @@ class TestAnchorDetection(unittest.TestCase):
         img = np.full((1080, 1920, 3), (20, 20, 20), dtype=np.uint8)
         anchors = self.finder._find_table_boundary(img)
         self.assertEqual(len(anchors), 0, "Should not detect boundary on plain dark image")
+
+
+# ---------------------------------------------------------------------------
+# TemplateBank tests
+# ---------------------------------------------------------------------------
+
+@unittest.skipUnless(CV_AVAILABLE, "OpenCV not installed")
+class TestTemplateBank(unittest.TestCase):
+    """Tests for the TemplateBank template management system."""
+
+    def test_empty_bank(self):
+        bank = TemplateBank()
+        self.assertEqual(bank.count, 0)
+        self.assertEqual(bank.categories, [])
+        self.assertEqual(bank.all_entries(), [])
+
+    def test_generate_button_templates(self):
+        bank = TemplateBank()
+        count = bank.generate_button_templates()
+        self.assertGreater(count, 0)
+        self.assertIn("button", bank.categories)
+        self.assertEqual(bank.count, count)
+
+        # Every entry should have valid image data
+        for entry in bank.get("button"):
+            self.assertIsInstance(entry.image, np.ndarray)
+            self.assertEqual(len(entry.image.shape), 2)  # grayscale
+            self.assertGreater(entry.image.shape[0], 0)
+            self.assertGreater(entry.image.shape[1], 0)
+
+    def test_generate_logo_templates(self):
+        bank = TemplateBank()
+        count = bank.generate_logo_templates()
+        self.assertGreater(count, 0)
+        self.assertIn("logo", bank.categories)
+        for entry in bank.get("logo"):
+            self.assertIn("type", entry.metadata)
+
+    def test_load_directory_nonexistent(self):
+        bank = TemplateBank(Path("/nonexistent/path"))
+        loaded = bank.load_directory()
+        self.assertEqual(loaded, 0)
+
+    def test_load_directory_with_real_templates(self):
+        """Write a template to a temp dir and load it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a fake template image
+            tpl = np.full((30, 80), 120, dtype=np.uint8)
+            cv2.putText(tpl, "Fold", (5, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
+            cv2.imwrite(str(Path(tmpdir) / "button_fold.png"), tpl)
+
+            tpl2 = np.full((30, 80), 100, dtype=np.uint8)
+            cv2.putText(tpl2, "Call", (5, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
+            cv2.imwrite(str(Path(tmpdir) / "button_call.png"), tpl2)
+
+            bank = TemplateBank(Path(tmpdir))
+            loaded = bank.load_directory()
+            self.assertEqual(loaded, 2)
+            self.assertIn("button", bank.categories)
+            entries = bank.get("button")
+            names = {e.name for e in entries}
+            self.assertIn("fold", names)
+            self.assertIn("call", names)
+
+    def test_template_entry_fields(self):
+        bank = TemplateBank()
+        bank.generate_button_templates(
+            labels={"fold": ["Fold"]},
+            sizes=[(100, 36)],
+            font_scales=[0.5],
+            bg_colors=[60],
+        )
+        self.assertEqual(bank.count, 1)
+        entry = bank.get("button")[0]
+        self.assertEqual(entry.category, "button")
+        self.assertEqual(entry.original_size, (100, 36))
+        self.assertEqual(entry.metadata["btn_name"], "fold")
+        self.assertEqual(entry.metadata["label"], "Fold")
+
+    def test_multiple_categories(self):
+        bank = TemplateBank()
+        bank.generate_button_templates(
+            labels={"fold": ["Fold"]}, sizes=[(80, 30)],
+            font_scales=[0.5], bg_colors=[60],
+        )
+        bank.generate_logo_templates()
+        self.assertGreaterEqual(len(bank.categories), 2)
+        self.assertIn("button", bank.categories)
+        self.assertIn("logo", bank.categories)
+
+
+# ---------------------------------------------------------------------------
+# Template matching integration tests
+# ---------------------------------------------------------------------------
+
+@unittest.skipUnless(CV_AVAILABLE, "OpenCV not installed")
+class TestTemplateMatching(unittest.TestCase):
+    """Test cv2.matchTemplate-based anchor detection in AutoROIFinder."""
+
+    def test_template_anchors_on_synthetic_table(self):
+        """Template matching should find at least some anchors on a synthetic table with buttons."""
+        finder = AutoROIFinder(use_ocr=False, use_templates=True)
+        img = generate_synthetic_table(
+            width=1920, height=1080,
+            add_buttons=True, add_cards=True,
+        )
+        anchors = finder._find_template_anchors(img)
+        # On synthetic images template matching may or may not fire,
+        # but the method should not crash and return a list
+        self.assertIsInstance(anchors, list)
+        for a in anchors:
+            self.assertEqual(a.anchor_type, AnchorType.TEMPLATE)
+            self.assertGreater(a.confidence, 0)
+
+    def test_template_matching_finds_embedded_template(self):
+        """Embed a known template into an image and verify matchTemplate finds it."""
+        # Create a small template
+        tpl_img = np.full((30, 80), 60, dtype=np.uint8)
+        cv2.putText(tpl_img, "Fold", (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, 255, 1, cv2.LINE_AA)
+
+        # Create a scene and embed the template at a known location
+        scene = np.full((600, 800), 30, dtype=np.uint8)
+        embed_x, embed_y = 350, 450
+        scene[embed_y:embed_y + 30, embed_x:embed_x + 80] = tpl_img
+
+        # Convert scene to BGR (finder expects BGR)
+        scene_bgr = cv2.cvtColor(scene, cv2.COLOR_GRAY2BGR)
+
+        # Build finder with a bank containing exactly our template
+        finder = AutoROIFinder(use_ocr=False, use_templates=True, auto_generate_templates=False)
+        entry = TemplateEntry(
+            name="fold_exact",
+            category="button",
+            image=tpl_img.copy(),
+            original_size=(80, 30),
+            metadata={"btn_name": "fold"},
+        )
+        finder.template_bank._templates.setdefault("button", []).append(entry)
+
+        anchors = finder._find_template_anchors(scene_bgr)
+        self.assertGreater(len(anchors), 0, "Template matching did not find embedded template")
+
+        # Best anchor should be near the embed location
+        best = max(anchors, key=lambda a: a.confidence)
+        bx, by, bw, bh = best.bbox
+        self.assertAlmostEqual(bx, embed_x, delta=5)
+        self.assertAlmostEqual(by, embed_y, delta=5)
+        self.assertGreater(best.confidence, 0.8)
+
+    def test_template_matching_multi_scale(self):
+        """Embed a scaled-down template and check multi-scale matching finds it."""
+        # Template at original size
+        tpl_img = np.full((40, 120), 70, dtype=np.uint8)
+        cv2.putText(tpl_img, "RAISE", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6, 240, 1, cv2.LINE_AA)
+
+        # Embed at 0.7x scale
+        scale = 0.7
+        scaled = cv2.resize(tpl_img, (int(120 * scale), int(40 * scale)), interpolation=cv2.INTER_AREA)
+        scene = np.full((500, 700), 25, dtype=np.uint8)
+        ex, ey = 200, 350
+        sh, sw = scaled.shape[:2]
+        scene[ey:ey + sh, ex:ex + sw] = scaled
+        scene_bgr = cv2.cvtColor(scene, cv2.COLOR_GRAY2BGR)
+
+        finder = AutoROIFinder(use_ocr=False, use_templates=True, auto_generate_templates=False)
+        entry = TemplateEntry(
+            name="raise_exact",
+            category="button",
+            image=tpl_img.copy(),
+            original_size=(120, 40),
+            metadata={"btn_name": "raise"},
+        )
+        finder.template_bank._templates.setdefault("button", []).append(entry)
+
+        anchors = finder._find_template_anchors(scene_bgr)
+        self.assertGreater(len(anchors), 0, "Multi-scale matching failed to find scaled template")
+
+        best = max(anchors, key=lambda a: a.confidence)
+        self.assertAlmostEqual(best.bbox[0], ex, delta=10)
+        self.assertAlmostEqual(best.bbox[1], ey, delta=10)
+
+    def test_template_nms_deduplication(self):
+        """Multiple similar templates should not produce duplicate anchors for same location."""
+        tpl1 = np.full((30, 80), 60, dtype=np.uint8)
+        cv2.putText(tpl1, "Fold", (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
+        tpl2 = np.full((30, 80), 65, dtype=np.uint8)
+        cv2.putText(tpl2, "Fold", (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 250, 1)
+
+        scene = np.full((600, 800), 30, dtype=np.uint8)
+        scene[400:430, 350:430] = tpl1
+        scene_bgr = cv2.cvtColor(scene, cv2.COLOR_GRAY2BGR)
+
+        finder = AutoROIFinder(use_ocr=False, use_templates=True, auto_generate_templates=False)
+        for i, tpl in enumerate([tpl1, tpl2]):
+            entry = TemplateEntry(
+                name=f"fold_v{i}", category="button",
+                image=tpl.copy(), original_size=(80, 30),
+                metadata={"btn_name": "fold"},
+            )
+            finder.template_bank._templates.setdefault("button", []).append(entry)
+
+        anchors = finder._find_template_anchors(scene_bgr)
+        # After NMS + name dedup, should have at most 1 anchor named btn_fold
+        fold_anchors = [a for a in anchors if a.name == "btn_fold"]
+        self.assertLessEqual(len(fold_anchors), 1)
+
+    def test_no_templates_no_crash(self):
+        """When template bank is empty, _find_template_anchors returns []."""
+        finder = AutoROIFinder(use_ocr=False, use_templates=True, auto_generate_templates=False)
+        img = generate_synthetic_table()
+        anchors = finder._find_template_anchors(img)
+        self.assertEqual(anchors, [])
+
+    def test_use_templates_false_skips_matching(self):
+        """When use_templates=False, template anchors should not appear."""
+        finder = AutoROIFinder(use_ocr=False, use_templates=False)
+        img = generate_synthetic_table(add_buttons=True)
+        result = finder.find_rois(img)
+        tpl_anchors = [a for a in result.anchors_found if a.anchor_type == AnchorType.TEMPLATE]
+        self.assertEqual(len(tpl_anchors), 0)
+
+
+# ---------------------------------------------------------------------------
+# Integration: full pipeline with templates enabled
+# ---------------------------------------------------------------------------
+
+@unittest.skipUnless(CV_AVAILABLE, "OpenCV not installed")
+class TestPipelineWithTemplates(unittest.TestCase):
+    """Verify that the full find_rois pipeline works with templates enabled."""
+
+    def test_find_rois_with_templates_enabled(self):
+        """Full pipeline with auto-generated templates should produce zones."""
+        finder = AutoROIFinder(use_ocr=False, use_templates=True)
+        img = generate_synthetic_table(
+            width=1920, height=1080, add_buttons=True, add_cards=True,
+        )
+        result = finder.find_rois(img)
+        self.assertGreaterEqual(result.zone_count, 10)
+        self.assertGreater(result.confidence, 0)
+        # Should have some anchors (at minimum edge + color + shape)
+        self.assertGreater(len(result.anchors_found), 0)
+
+    def test_template_anchors_boost_confidence(self):
+        """When template anchors are found, confidence should be >= pure-color-only."""
+        img = generate_synthetic_table(add_buttons=True, add_cards=True)
+
+        finder_no_tpl = AutoROIFinder(use_ocr=False, use_templates=False)
+        result_no = finder_no_tpl.find_rois(img)
+
+        finder_tpl = AutoROIFinder(use_ocr=False, use_templates=True)
+        result_tpl = finder_tpl.find_rois(img)
+
+        # With templates enabled, confidence should be at least as good
+        # (may be same if no template anchors fire on synthetic image)
+        self.assertGreaterEqual(result_tpl.confidence, result_no.confidence * 0.95)
+
+    def test_anchor_type_template_in_results(self):
+        """Embed a known template to guarantee TEMPLATE anchors appear in results."""
+        tpl_img = np.full((30, 80), 60, dtype=np.uint8)
+        cv2.putText(tpl_img, "Call", (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
+
+        scene = generate_synthetic_table(width=1920, height=1080, add_buttons=True)
+        # Embed template into the scene (bottom area where buttons live)
+        ex, ey = 800, 850
+        gray_scene = cv2.cvtColor(scene, cv2.COLOR_BGR2GRAY)
+        gray_scene[ey:ey + 30, ex:ex + 80] = tpl_img
+        scene[:, :, 0] = gray_scene
+        scene[:, :, 1] = gray_scene
+        scene[:, :, 2] = gray_scene
+
+        finder = AutoROIFinder(use_ocr=False, use_templates=True, auto_generate_templates=False)
+        entry = TemplateEntry(
+            name="call_test", category="button",
+            image=tpl_img.copy(), original_size=(80, 30),
+            metadata={"btn_name": "call"},
+        )
+        finder.template_bank._templates.setdefault("button", []).append(entry)
+
+        result = finder.find_rois(scene)
+        tpl_anchors = [a for a in result.anchors_found if a.anchor_type == AnchorType.TEMPLATE]
+        self.assertGreater(len(tpl_anchors), 0, "No TEMPLATE anchors in results")
 
 
 if __name__ == "__main__":

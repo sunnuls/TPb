@@ -6,15 +6,21 @@ Phase 1 of vision_fragility.md.
 Detects anchors (buttons, table felt, card shapes, text) and infers
 all standard ROI zones from their relative positions.
 
+**Key feature**: multi-scale ``cv2.matchTemplate`` for robust detection
+of buttons, logos, and UI elements across different skins, resolutions,
+and themes.
+
 Works across different skins, resolutions, and themes.
 
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 """
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -35,6 +41,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Default templates directory
+_DEFAULT_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -46,6 +55,7 @@ class AnchorType(Enum):
     COLOR = "color"
     SHAPE = "shape"
     EDGE = "edge"
+    TEMPLATE = "template"
 
 
 @dataclass
@@ -105,6 +115,202 @@ POT_KEYWORDS = ["pot", "пот", "банк", "total"]
 
 
 # ---------------------------------------------------------------------------
+# TemplateBank — manages reference template images
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TemplateEntry:
+    """A single reference template image."""
+
+    name: str  # e.g. "fold_btn", "pokerstars_logo"
+    category: str  # "button", "logo", "ui"
+    image: "np.ndarray"  # grayscale template
+    original_size: Tuple[int, int]  # (w, h)
+    metadata: Dict = field(default_factory=dict)
+
+
+class TemplateBank:
+    """
+    Stores and manages reference templates for matchTemplate anchor detection.
+
+    Templates can be:
+    * Loaded from disk  (``load_directory``)
+    * Generated programmatically (``generate_button_templates``)
+    """
+
+    def __init__(self, templates_dir: Optional[Path] = None):
+        self._templates: Dict[str, List[TemplateEntry]] = {}  # category → entries
+        self.templates_dir = Path(templates_dir) if templates_dir else _DEFAULT_TEMPLATES_DIR
+
+    # -- Loading --------------------------------------------------------
+
+    def load_directory(self, directory: Optional[Path] = None) -> int:
+        """Load all ``*.png`` / ``*.jpg`` templates from *directory*.
+
+        File naming convention: ``<category>_<name>.png``
+        e.g. ``button_fold.png``, ``logo_pokerstars.png``
+
+        Returns the number of templates loaded.
+        """
+        if not CV_AVAILABLE:
+            return 0
+
+        d = Path(directory) if directory else self.templates_dir
+        if not d.is_dir():
+            logger.debug("Templates directory not found: %s", d)
+            return 0
+
+        count = 0
+        for fp in sorted(d.iterdir()):
+            if fp.suffix.lower() not in (".png", ".jpg", ".jpeg", ".bmp"):
+                continue
+            img = cv2.imread(str(fp), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                logger.warning("Cannot read template: %s", fp)
+                continue
+
+            parts = fp.stem.split("_", maxsplit=1)
+            category = parts[0] if len(parts) > 1 else "misc"
+            name = parts[1] if len(parts) > 1 else fp.stem
+
+            entry = TemplateEntry(
+                name=name,
+                category=category,
+                image=img,
+                original_size=(img.shape[1], img.shape[0]),
+            )
+            self._templates.setdefault(category, []).append(entry)
+            count += 1
+
+        logger.info("Loaded %d templates from %s", count, d)
+        return count
+
+    # -- Programmatic generation ----------------------------------------
+
+    def generate_button_templates(
+        self,
+        labels: Optional[Dict[str, List[str]]] = None,
+        sizes: Optional[List[Tuple[int, int]]] = None,
+        font_scales: Optional[List[float]] = None,
+        bg_colors: Optional[List[int]] = None,
+        text_color: int = 255,
+    ) -> int:
+        """Generate synthetic button templates for common poker actions.
+
+        Each label is rendered at every (size, font_scale, bg_color) combination
+        to cover diverse poker skins.
+
+        Returns:
+            Number of templates generated.
+        """
+        if not CV_AVAILABLE:
+            return 0
+
+        if labels is None:
+            labels = {
+                "fold": ["Fold", "FOLD"],
+                "check": ["Check"],
+                "call": ["Call", "CALL"],
+                "raise": ["Raise", "RAISE"],
+                "bet": ["Bet"],
+                "allin": ["All-In"],
+            }
+        if sizes is None:
+            sizes = [(100, 36), (80, 30)]
+        if font_scales is None:
+            font_scales = [0.5, 0.6]
+        if bg_colors is None:
+            bg_colors = [60, 80]  # button background grays
+
+        count = 0
+        for btn_name, texts in labels.items():
+            for text in texts:
+                for w, h in sizes:
+                    for fs in font_scales:
+                        for bg in bg_colors:
+                            img = np.full((h, w), bg, dtype=np.uint8)
+                            # Center text
+                            (tw, th_text), _ = cv2.getTextSize(
+                                text, cv2.FONT_HERSHEY_SIMPLEX, fs, 1,
+                            )
+                            tx = max(0, (w - tw) // 2)
+                            ty = max(th_text, (h + th_text) // 2)
+                            cv2.putText(
+                                img, text, (tx, ty),
+                                cv2.FONT_HERSHEY_SIMPLEX, fs,
+                                text_color, 1, cv2.LINE_AA,
+                            )
+                            entry = TemplateEntry(
+                                name=f"{btn_name}_{text}_{w}x{h}_fs{fs}_bg{bg}",
+                                category="button",
+                                image=img,
+                                original_size=(w, h),
+                                metadata={"label": text, "btn_name": btn_name},
+                            )
+                            self._templates.setdefault("button", []).append(entry)
+                            count += 1
+
+        logger.info("Generated %d synthetic button templates", count)
+        return count
+
+    def generate_logo_templates(self) -> int:
+        """Generate simple geometric logo placeholder templates.
+
+        Real logos would be loaded from ``templates/`` directory.  These
+        synthetic placeholders provide a structural baseline.
+
+        Returns:
+            Number of templates generated.
+        """
+        if not CV_AVAILABLE:
+            return 0
+
+        count = 0
+        # Simple circle logo (dealer button)
+        for radius in (12, 16, 20):
+            sz = radius * 2 + 4
+            img = np.zeros((sz, sz), dtype=np.uint8)
+            cv2.circle(img, (sz // 2, sz // 2), radius, 200, -1)
+            cv2.putText(
+                img, "D", (sz // 2 - 6, sz // 2 + 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, 0, 1, cv2.LINE_AA,
+            )
+            entry = TemplateEntry(
+                name=f"dealer_r{radius}",
+                category="logo",
+                image=img,
+                original_size=(sz, sz),
+                metadata={"type": "dealer_button"},
+            )
+            self._templates.setdefault("logo", []).append(entry)
+            count += 1
+
+        logger.info("Generated %d logo templates", count)
+        return count
+
+    # -- Access ---------------------------------------------------------
+
+    def get(self, category: str) -> List[TemplateEntry]:
+        """Return all templates for *category* (e.g. 'button', 'logo')."""
+        return list(self._templates.get(category, []))
+
+    def all_entries(self) -> List[TemplateEntry]:
+        """Flat list of every template."""
+        out: List[TemplateEntry] = []
+        for entries in self._templates.values():
+            out.extend(entries)
+        return out
+
+    @property
+    def count(self) -> int:
+        return sum(len(v) for v in self._templates.values())
+
+    @property
+    def categories(self) -> List[str]:
+        return list(self._templates.keys())
+
+
+# ---------------------------------------------------------------------------
 # AutoROIFinder
 # ---------------------------------------------------------------------------
 
@@ -113,6 +319,8 @@ class AutoROIFinder:
     Finds ROI zones automatically using visual anchors.
 
     Strategy (priority order):
+        0. **Template anchors** — ``cv2.matchTemplate`` multi-scale matching
+           for buttons, logos, and UI elements from a :class:`TemplateBank`
         1. Text anchors  — OCR for button labels (Fold/Call/Raise) & pot text
         2. Color anchors — table felt (green), colored action buttons
         3. Shape anchors — card-shaped rectangles, dealer button circle
@@ -121,6 +329,17 @@ class AutoROIFinder:
     From anchors the class infers *all* standard ROI zones relative to the
     detected table geometry.
     """
+
+    # Multi-scale factors for template matching (kept small for speed)
+    TEMPLATE_SCALES = [0.6, 0.8, 1.0, 1.2, 1.5]
+
+    # matchTemplate threshold per category
+    TEMPLATE_THRESHOLDS = {
+        "button": 0.55,
+        "logo": 0.60,
+        "ui": 0.60,
+        "misc": 0.65,
+    }
 
     # Felt color ranges (HSV) — covers many poker skins
     FELT_RANGES = [
@@ -148,13 +367,37 @@ class AutoROIFinder:
         use_ocr: bool = True,
         ocr_lang: str = "eng+rus",
         min_felt_area_ratio: float = 0.08,
+        templates_dir: Optional[Path] = None,
+        use_templates: bool = True,
+        auto_generate_templates: bool = True,
     ):
         self.use_ocr = use_ocr and TESSERACT_AVAILABLE
         self.ocr_lang = ocr_lang
         self.min_felt_area_ratio = min_felt_area_ratio
+        self.use_templates = use_templates
 
         if not CV_AVAILABLE:
             raise RuntimeError("OpenCV (cv2) is required for AutoROIFinder")
+
+        # Initialise template bank
+        self._template_bank = TemplateBank(templates_dir)
+        if use_templates:
+            # Try loading from disk first
+            loaded = self._template_bank.load_directory()
+            # Auto-generate synthetic templates if none loaded
+            if auto_generate_templates and loaded == 0:
+                self._template_bank.generate_button_templates()
+                self._template_bank.generate_logo_templates()
+            logger.info(
+                "TemplateBank ready: %d templates in %s",
+                self._template_bank.count,
+                self._template_bank.categories,
+            )
+
+    @property
+    def template_bank(self) -> TemplateBank:
+        """Access the internal template bank (e.g. for adding custom templates)."""
+        return self._template_bank
 
     # ------------------------------------------------------------------
     # Public API
@@ -183,13 +426,16 @@ class AutoROIFinder:
         anchors: List[Anchor] = []
         anchors += self._find_table_boundary(image)
         anchors += self._find_color_anchors(image)
+        if self.use_templates and self._template_bank.count > 0:
+            anchors += self._find_template_anchors(image)
         if self.use_ocr:
             anchors += self._find_text_anchors(image)
         anchors += self._find_card_shapes(image)
 
         logger.info(
-            "Anchors found: %d (text=%d, color=%d, shape=%d, edge=%d)",
+            "Anchors found: %d (template=%d, text=%d, color=%d, shape=%d, edge=%d)",
             len(anchors),
+            sum(1 for a in anchors if a.anchor_type == AnchorType.TEMPLATE),
             sum(1 for a in anchors if a.anchor_type == AnchorType.TEXT),
             sum(1 for a in anchors if a.anchor_type == AnchorType.COLOR),
             sum(1 for a in anchors if a.anchor_type == AnchorType.SHAPE),
@@ -217,6 +463,103 @@ class AutoROIFinder:
     # ------------------------------------------------------------------
     # Anchor detectors
     # ------------------------------------------------------------------
+
+    def _find_template_anchors(self, image: np.ndarray) -> List[Anchor]:
+        """Detect UI elements using multi-scale ``cv2.matchTemplate``.
+
+        For each template in the :class:`TemplateBank` the method tries
+        several scale factors and keeps the best match above a per-category
+        threshold.  A lightweight NMS step removes duplicate detections.
+
+        Returns:
+            List of :class:`Anchor` with ``anchor_type == TEMPLATE``.
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        h_img, w_img = gray.shape[:2]
+
+        raw_hits: List[Tuple[float, int, int, int, int, TemplateEntry]] = []
+
+        # Limit templates to avoid excessive computation
+        all_templates = self._template_bank.all_entries()
+        if len(all_templates) > 100:
+            # Keep only highest-priority: deduplicate by btn_name keeping first
+            seen_names: set = set()
+            filtered: List[TemplateEntry] = []
+            for e in all_templates:
+                key = e.metadata.get("btn_name", e.name)
+                if key not in seen_names:
+                    seen_names.add(key)
+                    filtered.append(e)
+                if len(filtered) >= 100:
+                    break
+            all_templates = filtered
+
+        for entry in all_templates:
+            th = self.TEMPLATE_THRESHOLDS.get(entry.category, 0.65)
+            best_val = -1.0
+            best_loc: Optional[Tuple[int, int, int, int]] = None
+
+            for scale in self.TEMPLATE_SCALES:
+                tw = max(5, int(entry.original_size[0] * scale))
+                th_s = max(5, int(entry.original_size[1] * scale))
+
+                # Skip if template bigger than image
+                if tw >= w_img or th_s >= h_img:
+                    continue
+
+                tpl = cv2.resize(entry.image, (tw, th_s), interpolation=cv2.INTER_AREA)
+                result = cv2.matchTemplate(gray, tpl, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+                if max_val > best_val:
+                    best_val = max_val
+                    best_loc = (max_loc[0], max_loc[1], tw, th_s)
+
+            if best_val >= th and best_loc is not None:
+                raw_hits.append((best_val, *best_loc, entry))
+
+        # NMS: sort by score descending, suppress overlapping
+        raw_hits.sort(key=lambda h: -h[0])
+        anchors: List[Anchor] = []
+        used_boxes: List[Tuple[int, int, int, int]] = []
+
+        for score, x, y, w, h, entry in raw_hits:
+            bbox = (x, y, w, h)
+            if any(self._iou(bbox, ub) > 0.35 for ub in used_boxes):
+                continue
+            used_boxes.append(bbox)
+
+            # Derive anchor name from template metadata
+            btn_name = entry.metadata.get("btn_name", "")
+            if btn_name:
+                name = f"btn_{btn_name}"
+            elif entry.metadata.get("type") == "dealer_button":
+                name = "dealer_button"
+            else:
+                name = f"tpl_{entry.category}_{entry.name}"
+
+            anchors.append(Anchor(
+                anchor_type=AnchorType.TEMPLATE,
+                name=name,
+                bbox=bbox,
+                confidence=round(float(score), 3),
+                metadata={
+                    "template": entry.name,
+                    "category": entry.category,
+                    "scale_match": round(w / entry.original_size[0], 2)
+                    if entry.original_size[0] else 1.0,
+                },
+            ))
+
+        # Deduplicate anchors with the same name — keep highest confidence
+        seen: Dict[str, Anchor] = {}
+        for a in anchors:
+            if a.name not in seen or a.confidence > seen[a.name].confidence:
+                seen[a.name] = a
+        anchors = list(seen.values())
+
+        logger.debug("Template matching found %d anchors", len(anchors))
+        return anchors
 
     def _find_table_boundary(self, image: np.ndarray) -> List[Anchor]:
         """Detect the table felt region and return its bounding rect as an EDGE anchor."""
@@ -259,6 +602,144 @@ class AutoROIFinder:
             confidence=conf,
             metadata={"felt_ratio": best_area / total_pixels},
         )]
+
+    # ------------------------------------------------------------------
+    # Template matching anchor detector (cv2.matchTemplate)
+    # ------------------------------------------------------------------
+
+    def _find_template_anchors(self, image: np.ndarray) -> List[Anchor]:
+        """Detect anchors via multi-scale ``cv2.matchTemplate``.
+
+        For each template in the bank, the method tries several scale
+        factors and keeps only matches above the category threshold.
+        Non-maximum suppression removes duplicate detections.
+
+        Returns:
+            List of TEMPLATE-type anchors.
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        h_img, w_img = gray.shape[:2]
+
+        raw_matches: List[Tuple[str, str, int, int, int, int, float, Dict]] = []
+        # (name, category, x, y, w, h, score, metadata)
+
+        for entry in self._template_bank.all_entries():
+            threshold = self.TEMPLATE_THRESHOLDS.get(
+                entry.category, 0.65,
+            )
+            best_score = 0.0
+            best_loc: Optional[Tuple[int, int, int, int]] = None
+            best_scale = 1.0
+
+            for scale in self.TEMPLATE_SCALES:
+                tw = max(1, int(entry.image.shape[1] * scale))
+                th = max(1, int(entry.image.shape[0] * scale))
+
+                # Skip if template is larger than image
+                if tw >= w_img or th >= h_img:
+                    continue
+                # Skip if template is too tiny
+                if tw < 8 or th < 6:
+                    continue
+
+                tmpl = cv2.resize(entry.image, (tw, th), interpolation=cv2.INTER_AREA)
+
+                result = cv2.matchTemplate(gray, tmpl, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+                if max_val > best_score:
+                    best_score = max_val
+                    best_loc = (max_loc[0], max_loc[1], tw, th)
+                    best_scale = scale
+
+            if best_score >= threshold and best_loc is not None:
+                raw_matches.append((
+                    entry.name,
+                    entry.category,
+                    best_loc[0], best_loc[1], best_loc[2], best_loc[3],
+                    best_score,
+                    {
+                        "scale": best_scale,
+                        "category": entry.category,
+                        **entry.metadata,
+                    },
+                ))
+
+        # Convert to Anchor and apply NMS within category
+        anchors: List[Anchor] = []
+        by_cat: Dict[str, List[Anchor]] = {}
+
+        for name, category, x, y, w, h, score, meta in raw_matches:
+            a = Anchor(
+                anchor_type=AnchorType.TEMPLATE,
+                name=f"tmpl_{category}_{name}",
+                bbox=(x, y, w, h),
+                confidence=score,
+                metadata=meta,
+            )
+            by_cat.setdefault(category, []).append(a)
+
+        for cat, cat_anchors in by_cat.items():
+            anchors.extend(
+                self._dedupe_anchors(cat_anchors, iou_thresh=0.35)
+            )
+
+        logger.debug("Template matching: %d raw → %d after NMS", len(raw_matches), len(anchors))
+        return anchors
+
+    def match_template_at(
+        self,
+        image: np.ndarray,
+        template: np.ndarray,
+        threshold: float = 0.6,
+        max_matches: int = 10,
+    ) -> List[Tuple[int, int, int, int, float]]:
+        """Low-level multi-scale matchTemplate returning *all* matches above threshold.
+
+        Useful for finding multiple instances of the same element (e.g.
+        several identical buttons).
+
+        Returns:
+            List of (x, y, w, h, score) tuples.
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+        h_img, w_img = gray.shape[:2]
+
+        all_hits: List[Tuple[int, int, int, int, float]] = []
+
+        for scale in self.TEMPLATE_SCALES:
+            tw = max(1, int(template.shape[1] * scale))
+            th = max(1, int(template.shape[0] * scale))
+            if tw >= w_img or th >= h_img or tw < 8 or th < 6:
+                continue
+
+            tmpl = cv2.resize(template, (tw, th), interpolation=cv2.INTER_AREA)
+            result = cv2.matchTemplate(gray, tmpl, cv2.TM_CCOEFF_NORMED)
+
+            # Find all locations above threshold
+            locs = np.where(result >= threshold)
+            for py, px in zip(*locs):
+                score = float(result[py, px])
+                all_hits.append((int(px), int(py), tw, th, score))
+
+        # NMS by IoU
+        all_hits.sort(key=lambda t: -t[4])
+        kept: List[Tuple[int, int, int, int, float]] = []
+        for hit in all_hits:
+            if len(kept) >= max_matches:
+                break
+            overlap = False
+            for k in kept:
+                if self._iou(
+                    (hit[0], hit[1], hit[2], hit[3]),
+                    (k[0], k[1], k[2], k[3]),
+                ) > 0.35:
+                    overlap = True
+                    break
+            if not overlap:
+                kept.append(hit)
+
+        return kept
 
     def _find_color_anchors(self, image: np.ndarray) -> List[Anchor]:
         """Detect coloured buttons (green/red/blue/yellow).
@@ -766,6 +1247,7 @@ class AutoROIFinder:
         # Bonus for critical anchor types
         has_table = any(a.name == "table_boundary" for a in anchors)
         has_buttons = any(a.name.startswith("btn_") for a in anchors)
+        has_templates = any(a.anchor_type == AnchorType.TEMPLATE for a in anchors)
         has_cards = any(a.name == "card" for a in anchors)
 
         bonus = 0.0
@@ -773,6 +1255,8 @@ class AutoROIFinder:
             bonus += 0.15
         if has_buttons:
             bonus += 0.20
+        if has_templates:
+            bonus += 0.10
         if has_cards:
             bonus += 0.10
 

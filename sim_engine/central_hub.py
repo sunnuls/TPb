@@ -646,6 +646,130 @@ class CentralHub:
                 except Exception:
                     pass  # Agent disconnected
     
+    # ------------------------------------------------------------------
+    # full_hive_month.md Этап 2: full exchange hole cards
+    # ------------------------------------------------------------------
+
+    async def exchange_hole_cards(
+        self,
+        environment_id: str,
+        agent_id: str,
+        hole_cards: List[str],
+        *,
+        hand_id: str = "",
+    ) -> Dict[str, Any]:
+        """Full hole-card exchange for all agents in a session.
+
+        Extends :meth:`share_cards` with:
+          - Deduplication: no duplicate cards across agents
+          - Hand-ID tracking for multi-hand sessions
+          - Exchange-complete flag when all agents have shared
+          - Auto-broadcast of collective state when complete
+
+        Args:
+            environment_id: Session/table identifier.
+            agent_id:       Agent sharing its cards.
+            hole_cards:     List of 2 cards (e.g. ``["As", "Kh"]``).
+            hand_id:        Optional hand identifier.
+
+        Returns:
+            Dict with ``status``, ``collective_known_cards``,
+            ``exchange_complete``, ``agent_count``, ``error`` (if any).
+        """
+        # Get or create session
+        if environment_id not in self._sessions:
+            self._sessions[environment_id] = {}
+        session = self._sessions[environment_id]
+
+        if "hole_cards" not in session:
+            session["hole_cards"] = {}
+        if "hand_id" not in session or hand_id:
+            session["hand_id"] = hand_id
+
+        # Validate: no duplicate cards with other agents
+        err = self._validate_exchange(session, agent_id, hole_cards)
+        if err:
+            return {"status": "error", "error": err}
+
+        # Store cards
+        session["hole_cards"][agent_id] = hole_cards
+
+        # Count agents in session
+        agents_in_session = [
+            c for c in self._connections.values()
+            if c.environment_id == environment_id
+        ]
+        total_agents = max(len(agents_in_session), len(session["hole_cards"]))
+        shared_count = len(session["hole_cards"])
+
+        # Collect all known cards
+        collective = []
+        for aid, cards in session["hole_cards"].items():
+            collective.extend(cards)
+
+        exchange_complete = (shared_count >= total_agents and total_agents >= 2)
+
+        # Calculate collective equity
+        equity = self._calculate_collective_equity(collective, environment_id)
+
+        result: Dict[str, Any] = {
+            "status": "ok",
+            "agent_id": agent_id,
+            "hand_id": session.get("hand_id", ""),
+            "collective_known_cards": collective,
+            "collective_equity": equity,
+            "agents_shared": shared_count,
+            "agents_total": total_agents,
+            "exchange_complete": exchange_complete,
+        }
+
+        # Auto-broadcast when exchange is complete
+        if exchange_complete:
+            try:
+                await self.broadcast_collective_state(environment_id, result)
+            except Exception:
+                pass  # agents may not have websockets in tests
+
+        return result
+
+    def _validate_exchange(
+        self,
+        session: Dict[str, Any],
+        agent_id: str,
+        hole_cards: List[str],
+    ) -> Optional[str]:
+        """Validate that no cards are duplicated across agents.
+
+        Returns:
+            Error message string, or ``None`` if valid.
+        """
+        existing = session.get("hole_cards", {})
+        all_other_cards: Set[str] = set()
+        for aid, cards in existing.items():
+            if aid != agent_id:
+                all_other_cards.update(cards)
+
+        for c in hole_cards:
+            if c in all_other_cards:
+                return f"Duplicate card '{c}': already held by another agent"
+
+        return None
+
+    def get_session_cards(self, environment_id: str) -> Dict[str, List[str]]:
+        """Retrieve all shared hole cards for a session.
+
+        Returns:
+            Dict mapping agent_id → list of hole cards.
+        """
+        session = self._sessions.get(environment_id, {})
+        return dict(session.get("hole_cards", {}))
+
+    def clear_session_cards(self, environment_id: str) -> None:
+        """Clear hole cards for a session (new hand)."""
+        session = self._sessions.get(environment_id, {})
+        session.pop("hole_cards", None)
+        session.pop("hand_id", None)
+
     async def stop(self) -> None:
         """Stop the hub server."""
         if self.server:

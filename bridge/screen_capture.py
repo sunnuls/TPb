@@ -615,6 +615,143 @@ class ScreenCapture:
 
         return image[top:bottom, left:right].copy()
 
+    # -- Edge-detection crop (auto_find_window.md Phase 2) -----------------
+
+    @staticmethod
+    def edge_detect_crop(
+        image: np.ndarray,
+        *,
+        method: str = "canny",
+        canny_low: int = 50,
+        canny_high: int = 150,
+        sobel_ksize: int = 3,
+        margin: int = 2,
+        min_edge_density: float = 0.01,
+    ) -> np.ndarray:
+        """Crop an image to its content boundary using edge detection.
+
+        Unlike :meth:`auto_crop_borders` (which scans for brightness),
+        this method uses **Canny** or **Sobel** edge detectors to find
+        the actual content edges — works better when the window border
+        is a non-black colour or when content has low contrast.
+
+        Args:
+            image:            BGR or grayscale numpy array.
+            method:           ``"canny"`` (default) or ``"sobel"``.
+            canny_low:        Canny lower threshold.
+            canny_high:       Canny upper threshold.
+            sobel_ksize:      Sobel kernel size (odd, 1–31).
+            margin:           Extra pixels to keep around detected edges.
+            min_edge_density: Minimum fraction of edge pixels in a
+                              row/column for it to be considered content.
+
+        Returns:
+            Cropped image (copy).  If edge detection is not available
+            or no edges are found, falls back to :meth:`auto_crop_borders`.
+        """
+        if image is None or image.size == 0:
+            return image
+
+        if not CV2_AVAILABLE:
+            logger.debug("edge_detect_crop: cv2 not available, falling back")
+            return ScreenCapture.auto_crop_borders(image)
+
+        # Convert to grayscale
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+
+        # Apply Gaussian blur to reduce noise
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Edge detection
+        if method.lower() == "sobel":
+            sobel_x = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=sobel_ksize)
+            sobel_y = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=sobel_ksize)
+            edges = np.uint8(np.clip(
+                np.sqrt(sobel_x ** 2 + sobel_y ** 2), 0, 255
+            ))
+            # Binarize
+            _, edges = cv2.threshold(edges, 30, 255, cv2.THRESH_BINARY)
+        else:
+            # Default: Canny
+            edges = cv2.Canny(blurred, canny_low, canny_high)
+
+        h, w = edges.shape
+        if h == 0 or w == 0:
+            return image
+
+        min_h_pixels = max(1, int(w * min_edge_density))
+        min_v_pixels = max(1, int(h * min_edge_density))
+
+        # Scan rows for first/last with edges
+        row_edge_count = np.count_nonzero(edges, axis=1)
+        col_edge_count = np.count_nonzero(edges, axis=0)
+
+        # Find top
+        top = 0
+        for r in range(h):
+            if row_edge_count[r] >= min_h_pixels:
+                top = max(0, r - margin)
+                break
+
+        # Find bottom
+        bottom = h
+        for r in range(h - 1, top, -1):
+            if row_edge_count[r] >= min_h_pixels:
+                bottom = min(h, r + 1 + margin)
+                break
+
+        # Find left
+        left = 0
+        for c in range(w):
+            if col_edge_count[c] >= min_v_pixels:
+                left = max(0, c - margin)
+                break
+
+        # Find right
+        right = w
+        for c in range(w - 1, left, -1):
+            if col_edge_count[c] >= min_v_pixels:
+                right = min(w, c + 1 + margin)
+                break
+
+        # Sanity check
+        if right - left < 10 or bottom - top < 10:
+            logger.debug("edge_detect_crop: too small, falling back")
+            return ScreenCapture.auto_crop_borders(image)
+
+        return image[top:bottom, left:right].copy()
+
+    @staticmethod
+    def smart_crop(
+        image: np.ndarray,
+        *,
+        prefer_edge: bool = True,
+        **kwargs,
+    ) -> np.ndarray:
+        """Combined smart crop: edge detection first, then brightness fallback.
+
+        Args:
+            image:       BGR or grayscale numpy array.
+            prefer_edge: Try edge detection first (default True).
+            **kwargs:    Passed to :meth:`edge_detect_crop`.
+
+        Returns:
+            Cropped image (copy).
+        """
+        if image is None or image.size == 0:
+            return image
+
+        if prefer_edge and CV2_AVAILABLE:
+            cropped = ScreenCapture.edge_detect_crop(image, **kwargs)
+            # If edge crop produced a meaningful reduction, use it
+            if cropped.shape[0] < image.shape[0] or cropped.shape[1] < image.shape[1]:
+                return cropped
+
+        return ScreenCapture.auto_crop_borders(image)
+
     # -- internal Win32 capture helper -------------------------------------
 
     def _win32_grab(self, hwnd: int, width: int, height: int) -> Optional[np.ndarray]:
