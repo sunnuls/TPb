@@ -56,17 +56,23 @@ class StateBridge:
     def __init__(
         self,
         dry_run: bool = True,
-        config: Optional[dict] = None
+        config: Optional[dict] = None,
+        hwnd: Optional[int] = None,
+        roi_zones: Optional[list] = None,
     ):
         """
         Initialize state bridge.
-        
+
         Args:
-            dry_run: If True, use simulated data (safe mode)
-            config: Configuration dict (loaded from live_config.yaml)
+            dry_run:   If True, use simulated data (safe mode)
+            config:    Configuration dict (loaded from live_config.yaml)
+            hwnd:      CoinPoker window handle for direct capture
+            roi_zones: Auto-detected ROI zones (list of dicts)
         """
         self.dry_run = dry_run
         self.config = config or {}
+        self._hwnd = hwnd
+        self._roi_zones = roi_zones or []
         
         # Initialize all components
         # ScreenCapture doesn't take dry_run - uses SafetyFramework instead
@@ -108,98 +114,335 @@ class StateBridge:
         self,
         table_id: str = "live_table_001",
         room: str = "pokerstars",
-        resolution: str = "1920x1080"
+        resolution: str = "1920x1080",
+        hwnd: Optional[int] = None,
     ) -> Optional[TableState]:
         """
         PRIMARY INTERFACE: Extract complete table state.
-        
-        This is the main entry point for bridge mode integration.
-        
+
         Args:
-            table_id: Unique table identifier
-            room: Poker room name (for ROI selection)
+            table_id:   Unique table identifier
+            room:       Poker room name ("pokerstars" or "coinpoker")
             resolution: Screen resolution (for ROI selection)
-        
+            hwnd:       Window handle override (takes priority over self._hwnd)
+
         Returns:
-            Complete TableState or None on error
-        
-        EDUCATIONAL NOTE:
-            In DRY-RUN mode, returns realistic simulated TableState.
-            In UNSAFE mode, performs real vision extraction.
-        
-        Usage:
-            bridge = StateBridge(dry_run=True)
-            state = bridge.get_live_table_state()
-            
-            # Use with collective decision engine
-            collective_state = state.to_collective_state()
-            decision = decision_engine.decide(collective_state, legal_actions)
+            Complete TableState or None on error.
         """
         start_time = time.time()
         self.extractions_count += 1
-        
+        _hwnd = hwnd or self._hwnd
+
+        # Always force dry_run from SafetyFramework — the bridge may have been
+        # created before the user switched to UNSAFE mode in Settings.
+        try:
+            from bridge.safety import SafetyFramework, SafetyMode
+            _fw = SafetyFramework.get_instance()
+            _live = _fw.config.mode == SafetyMode.UNSAFE
+            new_dry = not _live
+            if self.dry_run != new_dry:
+                logger.info(
+                    "StateBridge: dry_run %s → %s (SafetyMode=%s)",
+                    self.dry_run, new_dry, _fw.config.mode,
+                )
+                self.dry_run = new_dry
+                # Sync child extractors as well
+                for attr in ("card_extractor", "numeric_parser", "metadata_extractor"):
+                    child = getattr(self, attr, None)
+                    if child is not None:
+                        child.dry_run = new_dry
+        except Exception:
+            pass
+
         try:
             # Step 1: Capture screenshot
-            screenshot, window_info = self._capture_screenshot()
-            
-            # Step 2: Load ROIs
+            screenshot, window_info = self._capture_screenshot(hwnd=_hwnd, room=room)
+
+            # Step 2: For PokerStars use dedicated extractor path
+            print(f"[STATE_BRIDGE] room={room} dry_run={self.dry_run} shot={'OK' if screenshot is not None else 'None'}")
+            if room == "pokerstars" and not self.dry_run and screenshot is not None:
+                state = self._extract_ps_state(screenshot, table_id, _hwnd)
+                if state is not None:
+                    self.last_extraction_time = time.time() - start_time
+                    self.last_state = state
+                    logger.info(
+                        "PS TableState: %s, pot=%.0f (%.3fs)",
+                        state.street.value, state.pot,
+                        self.last_extraction_time,
+                    )
+                    return state
+
+            # Step 3: Generic path (DRY-RUN and CoinPoker)
+            # In live mode with no screenshot, force dry_run simulation to avoid
+            # cascading OpenCV errors from passing None to extractors
+            effective_dry = self.dry_run or (screenshot is None)
+            if effective_dry and not self.dry_run:
+                logger.debug("No screenshot in live mode — using simulation fallback")
+
             roi_dict = self._load_rois(room, resolution)
-            
-            # Step 3: Extract all data
-            cards = self._extract_cards(screenshot, roi_dict)
-            numeric = self._extract_numeric(screenshot, roi_dict)
-            metadata = self._extract_metadata(
-                screenshot, roi_dict, len(cards['board'])
-            )
-            
-            # Step 4: Assemble TableState
+            # Temporarily force dry_run on child extractors when screenshot is unavailable
+            _saved = (self.card_extractor.dry_run, self.numeric_parser.dry_run,
+                      self.metadata_extractor.dry_run)
+            if effective_dry:
+                self.card_extractor.dry_run = True
+                self.numeric_parser.dry_run = True
+                self.metadata_extractor.dry_run = True
+            try:
+                cards = self._extract_cards(screenshot, roi_dict)
+                numeric = self._extract_numeric(screenshot, roi_dict)
+                metadata = self._extract_metadata(
+                    screenshot, roi_dict, len(cards['board'])
+                )
+            finally:
+                # Restore original dry_run state
+                self.card_extractor.dry_run, self.numeric_parser.dry_run, \
+                    self.metadata_extractor.dry_run = _saved
             state = self._assemble_table_state(
                 table_id=table_id,
                 cards=cards,
                 numeric=numeric,
-                metadata=metadata
+                metadata=metadata,
             )
-            
-            # Update statistics
+
             self.last_extraction_time = time.time() - start_time
             self.last_state = state
-            
+
             logger.info(
-                f"TableState extracted: {state.street.value}, "
-                f"{len(state.players)} players, pot={state.pot} bb "
-                f"(extraction_time={self.last_extraction_time:.3f}s)"
+                "TableState extracted: %s, %d players, pot=%.0f (%.3fs)",
+                state.street.value, len(state.players), state.pot,
+                self.last_extraction_time,
             )
-            
             return state
-            
+
         except Exception as e:
-            logger.error(f"State extraction failed: {e}", exc_info=True)
+            logger.error("State extraction failed: %s", e, exc_info=True)
             return None
-    
-    def _capture_screenshot(self) -> Tuple[Optional[np.ndarray], Optional[dict]]:
-        """
-        Capture screenshot from poker window.
-        
-        Returns:
-            (screenshot array, window info dict)
+
+    def _extract_ps_state(
+        self,
+        screenshot: np.ndarray,
+        table_id: str,
+        hwnd: Optional[int],
+    ) -> Optional["TableState"]:
+        """Extract TableState from a PokerStars table screenshot using pokerstars_extractor."""
+        try:
+            from bridge.vision.pokerstars_extractor import (
+                extract_cards_from_screenshot,
+                extract_pot,
+                extract_stack,
+                is_bots_turn,
+                parse_ps_number,
+                detect_action_buttons,
+                update_button_cache,
+            )
+            from sim_engine.state.table_state import TableState, PlayerState, Position, Street
+
+            # Load ROI definitions from pokerstars.yaml
+            roi_dict = self._load_rois_from_yaml("pokerstars")
+
+            # Cards
+            hero_cards = extract_cards_from_screenshot(
+                screenshot, roi_dict,
+                ["hero_card_1", "hero_card_2"],
+            )
+            board_cards = extract_cards_from_screenshot(
+                screenshot, roi_dict,
+                ["board_card_1", "board_card_2", "board_card_3",
+                 "board_card_4", "board_card_5"],
+            )
+
+            # Numeric
+            pot   = extract_pot(screenshot, roi_dict)
+            stack = extract_stack(screenshot, roi_dict, "hero_stack")
+
+            # Villain stacks
+            villain_stacks = {}
+            for i in range(1, 6):
+                key = f"villain_{i}_stack"
+                v = extract_stack(screenshot, roi_dict, key)
+                if v > 0:
+                    villain_stacks[f"v{i}"] = v
+
+            # Detect action buttons dynamically (no fixed ROI needed)
+            # and update cache so action executor can click them
+            buttons = detect_action_buttons(screenshot)
+            update_button_cache(buttons)
+
+            # Turn detection: buttons visible = it's our turn
+            bot_turn = bool(buttons) or is_bots_turn(screenshot, roi_dict)
+            logger.info(
+                "PS extract: hero=%s board=%s pot=%.0f turn=%s buttons=%s",
+                hero_cards, board_cards, pot, bot_turn, list(buttons.keys()),
+            )
+
+            # Determine street from board length
+            nb = len(board_cards)
+            if nb == 0:
+                street = Street.PREFLOP
+            elif nb == 3:
+                street = Street.FLOP
+            elif nb == 4:
+                street = Street.TURN
+            else:
+                street = Street.RIVER
+
+            # Build players
+            players = []
+            hero = PlayerState(
+                player_id="hero",
+                position=Position.BTN,
+                stack=stack,
+                hole_cards=hero_cards,
+                is_active=True,
+                is_hero=True,
+            )
+            players.append(hero)
+            for pid, stk in villain_stacks.items():
+                players.append(PlayerState(
+                    player_id=pid,
+                    position=Position.BB,
+                    stack=stk,
+                    is_active=True,
+                    is_hero=False,
+                ))
+
+            state = TableState(
+                table_id=table_id,
+                street=street,
+                pot=pot,
+                board=board_cards,
+                players=players,
+                is_bots_turn=bot_turn,
+            )
+            logger.debug(
+                "PS state: street=%s hero=%s board=%s pot=%.0f turn=%s",
+                street.value, hero_cards, board_cards, pot, bot_turn,
+            )
+            return state
+
+        except Exception as exc:
+            logger.warning("_extract_ps_state failed: %s", exc, exc_info=True)
+            # Also print so it's visible in terminal even if HIVE filters bridge.* logs
+            import traceback
+            print(f"[STATE_BRIDGE] _extract_ps_state EXCEPTION: {exc}")
+            traceback.print_exc()
+            return None
+
+    def _load_rois_from_yaml(self, room: str) -> Dict[str, Tuple[int, int, int, int]]:
+        """Load ROI definitions from config/rooms/<room>.yaml."""
+        try:
+            import yaml, os
+            yaml_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "config", "rooms", f"{room}.yaml"
+            )
+            if not os.path.exists(yaml_path):
+                return {}
+            with open(yaml_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            rois_raw = data.get("rois", {})
+            result: Dict[str, Tuple[int, int, int, int]] = {}
+            for name, vals in rois_raw.items():
+                result[name] = (
+                    vals.get("x", 0), vals.get("y", 0),
+                    vals.get("width", 50), vals.get("height", 30),
+                )
+            return result
+        except Exception as exc:
+            logger.debug("_load_rois_from_yaml(%s) error: %s", room, exc)
+            return {}
+
+    def _capture_screenshot(
+        self,
+        hwnd: Optional[int] = None,
+        room: str = "pokerstars",
+    ) -> Tuple[Optional[np.ndarray], Optional[dict]]:
+        """Capture screenshot from poker window.
+
+        For GLFW30/OpenGL windows (modern PokerStars) PrintWindow returns a
+        black frame, so we fall back to pyautogui screen capture of the
+        window's on-screen region.
         """
         if self.dry_run:
-            # Simulated screenshot
-            return None, {'title': 'PokerStars - Simulated', 'size': (1920, 1080)}
-        
-        # Real capture
-        window_info = self.screen_capture.find_window(
-            title_pattern="PokerStars"
-        )
-        
+            return None, {'title': f'{room} - Simulated', 'size': (1920, 1080)}
+
+        # Try PrintWindow first (works for non-OpenGL windows).
+        # For GLFW30/OpenGL (modern PokerStars) it returns a near-black frame
+        # (mean < ~15), so we discard those and fall through to pyautogui.
+        if hwnd:
+            try:
+                import cv2 as _cv2
+                img = self.screen_capture.capture_full_window(hwnd=hwnd)
+                if img is not None:
+                    if hasattr(img, "convert"):
+                        img = _cv2.cvtColor(
+                            np.array(img.convert("RGB")), _cv2.COLOR_RGB2BGR
+                        )
+                    h, w = img.shape[:2]
+                    mean_val = float(np.mean(img))
+                    logger.info(
+                        "Table capture (PrintWindow): %dx%d mean=%.1f",
+                        w, h, mean_val,
+                    )
+                    if mean_val > 15.0:  # actual content; not OpenGL black frame
+                        return img, {"hwnd": hwnd, "title": "captured_via_hwnd",
+                                     "size": (w, h)}
+                    logger.info(
+                        "PrintWindow image too dark (mean=%.1f) — "
+                        "OpenGL window detected, switching to pyautogui", mean_val
+                    )
+            except Exception as exc:
+                logger.info("PrintWindow capture failed: %s — trying pyautogui", exc)
+
+        # Fallback: pyautogui screenshot of the window's on-screen region.
+        # This is required for GLFW30/OpenGL windows where PrintWindow returns
+        # a solid-black frame.
+        if hwnd:
+            try:
+                import win32gui
+                import pyautogui
+                import cv2 as _cv2
+
+                rect = win32gui.GetWindowRect(hwnd)
+                wx, wy, wx2, wy2 = rect
+                ww, wh = wx2 - wx, wy2 - wy
+                if ww > 100 and wh > 100:
+                    # Bring window to front so pyautogui captures real pixels
+                    try:
+                        import win32con
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        win32gui.SetForegroundWindow(hwnd)
+                    except Exception:
+                        pass
+
+                    pil_img = pyautogui.screenshot(region=(wx, wy, ww, wh))
+                    img = _cv2.cvtColor(np.array(pil_img), _cv2.COLOR_RGB2BGR)
+                    mean_val = float(np.mean(img))
+                    logger.info(
+                        "Table capture (pyautogui): %dx%d at (%d,%d) mean=%.1f",
+                        ww, wh, wx, wy, mean_val,
+                    )
+                    if mean_val > 5.0:  # non-blank
+                        return img, {"hwnd": hwnd,
+                                     "title": "captured_via_pyautogui",
+                                     "size": (ww, wh)}
+                    logger.warning(
+                        "Table capture: pyautogui image blank (mean=%.1f) "
+                        "— window may be hidden", mean_val
+                    )
+            except Exception as exc:
+                logger.warning("pyautogui capture failed: %s", exc)
+
+        # Last resort: window title search (ScreenCapture uses its own pattern from init)
+        try:
+            window_info = self.screen_capture.find_window()
+        except Exception:
+            window_info = None
         if not window_info:
-            logger.warning("Poker window not found")
+            logger.debug("Poker window not found via screen_capture.find_window()")
             return None, None
-        
-        screenshot = self.screen_capture.capture_screenshot(
-            window_info=window_info
-        )
-        
+
+        screenshot = self.screen_capture.capture_screenshot(window_info=window_info)
         return screenshot, window_info
     
     def _load_rois(
@@ -425,6 +668,63 @@ class StateBridge:
         
         return position_map.get(position_str.upper(), Position.UNKNOWN)
     
+    def _roi_zones_to_dict(
+        self, roi_zones: list, img_shape: tuple
+    ) -> Dict[str, Tuple[int, int, int, int]]:
+        """Convert auto-ROI zone list to the {name: (x,y,w,h)} dict expected by extractors."""
+        result: Dict[str, Tuple[int, int, int, int]] = {}
+        for z in roi_zones:
+            if isinstance(z, dict):
+                name = z.get("name", "")
+                x, y = z.get("x", 0), z.get("y", 0)
+                w, h = z.get("w", 50), z.get("h", 25)
+            else:
+                name = getattr(z, "name", "")
+                x, y = getattr(z, "x", 0), getattr(z, "y", 0)
+                w, h = getattr(z, "w", 50), getattr(z, "h", 25)
+            if name:
+                result[name] = (x, y, w, h)
+        # Provide minimal defaults if missing
+        h_img = img_shape[0] if len(img_shape) > 0 else 1080
+        w_img = img_shape[1] if len(img_shape) > 1 else 1920
+        result.setdefault("hero_cards", (int(w_img * 0.38), int(h_img * 0.80), 200, 60))
+        result.setdefault("board",      (int(w_img * 0.28), int(h_img * 0.45), 440, 80))
+        result.setdefault("pot",        (int(w_img * 0.42), int(h_img * 0.40), 140, 35))
+        result.setdefault("fold_button",  (int(w_img * 0.25), int(h_img * 0.88), 130, 42))
+        result.setdefault("call_button",  (int(w_img * 0.43), int(h_img * 0.88), 130, 42))
+        result.setdefault("raise_button", (int(w_img * 0.61), int(h_img * 0.88), 130, 42))
+        return result
+
+    def _is_bots_turn(
+        self, img: "np.ndarray", roi_dict: Dict[str, Tuple[int, int, int, int]]
+    ) -> bool:
+        """Detect whether fold/call/raise buttons are visible (HSV green check).
+
+        Returns True when at least the "fold" button region contains a
+        significant green-hued area (indicating active action buttons).
+        """
+        try:
+            import cv2
+            import numpy as np
+
+            fold_roi = roi_dict.get("fold_button")
+            if fold_roi is None:
+                return False
+            x, y, w, h = fold_roi
+            region = img[y: y + h, x: x + w]
+            if region.size == 0:
+                return False
+
+            hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+            # Green hue range (CoinPoker action buttons are typically green)
+            lo = np.array([35,  60,  60])
+            hi = np.array([85, 255, 255])
+            mask = cv2.inRange(hsv, lo, hi)
+            green_ratio = np.count_nonzero(mask) / mask.size
+            return green_ratio > 0.10  # > 10 % green pixels in the fold zone
+        except Exception:
+            return False
+
     def get_statistics(self) -> dict:
         """Get state bridge statistics."""
         card_stats = self.card_extractor.get_statistics()

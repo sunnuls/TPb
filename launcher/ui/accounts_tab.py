@@ -11,6 +11,7 @@ Features:
 """
 
 import logging
+import time
 from typing import List, Optional
 
 try:
@@ -18,9 +19,10 @@ try:
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
         QTableWidget, QTableWidgetItem, QHeaderView,
         QDialog, QLineEdit, QLabel, QFormLayout,
-        QComboBox, QMessageBox, QListWidget, QCheckBox
+        QComboBox, QMessageBox, QListWidget, QCheckBox,
+        QProgressDialog, QDoubleSpinBox,
     )
-    from PyQt6.QtCore import Qt, pyqtSignal
+    from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject, pyqtSlot
     from PyQt6.QtGui import QColor
     PYQT_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -31,10 +33,76 @@ from launcher.models.roi_config import ROIZone
 from launcher.models.game_settings import GamePreferences
 from launcher.window_capture import WindowCapture
 
+def _detect_poker_client(title: str, process: str) -> str:
+    """Guess poker client from window title / process name."""
+    t = (title or "").lower()
+    p = (process or "").lower()
+    if "coinpoker" in t or "coin poker" in t or "coinpoker" in p:
+        return "coinpoker"
+    if "pokerstars" in t or "stars" in t or "pokerstars" in p:
+        return "pokerstars"
+    if "ggpoker" in t or "ggpoker" in p:
+        return "ggpoker"
+    if "partypoker" in t or "partypoker" in p:
+        return "partypoker"
+    return "unknown"
+
 if PYQT_AVAILABLE:
     from launcher.ui.roi_overlay import ROIOverlay
     from launcher.ui.game_settings_dialog import GameSettingsDialog
     from launcher.ui.debug_viewer import DebugViewer
+    from launcher.ui.theme import COLORS
+
+# --- Auto-ROI worker ---------------------------------------------------
+
+class _AutoROIWorker(QObject if PYQT_AVAILABLE else object):
+    """Runs auto-ROI detection off the UI thread."""
+    if PYQT_AVAILABLE:
+        finished = pyqtSignal(list, list)   # (zones, anchors)
+        error    = pyqtSignal(str)
+
+    def __init__(self, hwnd: int) -> None:
+        if PYQT_AVAILABLE:
+            super().__init__()
+        self._hwnd = hwnd
+
+    @pyqtSlot() if PYQT_AVAILABLE else (lambda f: f)
+    def run(self) -> None:
+        try:
+            from bridge.screen_capture import ScreenCapture
+            from bridge.vision.anchor_detector import (
+                detect_roi, load_config as load_anchor_config,
+            )
+            import numpy as np
+
+            sc  = ScreenCapture()
+            img = sc.capture(hwnd=self._hwnd)
+
+            if img is None:
+                self.error.emit("Capture returned None — is the window visible?")
+                return
+
+            # Normalise to numpy
+            if hasattr(img, "convert"):
+                import cv2
+                img = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+
+            cfg     = load_anchor_config()
+            anchors, zones = detect_roi(img, config=cfg)
+
+            zone_dicts = [
+                (z.to_dict() if hasattr(z, "to_dict") else z)
+                for z in zones
+            ]
+            anchor_dicts = [
+                {"name": a.name, "x": a.x, "y": a.y,
+                 "confidence": round(a.confidence, 3)}
+                for a in anchors if hasattr(a, "name")
+            ]
+            self.finished.emit(zone_dicts, anchor_dicts)
+
+        except Exception as exc:
+            self.error.emit(str(exc))
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +145,7 @@ if PYQT_AVAILABLE:
             # Room
             self.room_combo = QComboBox()
             self.room_combo.addItems([
+                "coinpoker",
                 "pokerstars",
                 "ignition",
                 "ggpoker",
@@ -85,6 +154,24 @@ if PYQT_AVAILABLE:
             ])
             layout.addRow("Poker Room:", self.room_combo)
             
+            # Chip balance (used for table buy-in filtering)
+            bal_row = QHBoxLayout()
+            self.balance_spin = QDoubleSpinBox()
+            self.balance_spin.setRange(0, 100_000_000)
+            self.balance_spin.setDecimals(0)
+            self.balance_spin.setSingleStep(1000)
+            self.balance_spin.setValue(0)
+            self.balance_spin.setToolTip(
+                "Your current chip balance in the poker room.\n"
+                "The bot uses this to filter tables it can afford.\n"
+                "Set to 0 to let the bot detect it automatically."
+            )
+            bal_row.addWidget(self.balance_spin)
+            bal_lbl = QLabel("(0 = auto-detect from lobby)")
+            bal_lbl.setStyleSheet("color: #888; font-size: 11px;")
+            bal_row.addWidget(bal_lbl)
+            layout.addRow("Chip Balance:", bal_row)
+
             # Notes
             self.notes_input = QLineEdit()
             self.notes_input.setPlaceholderText("Optional notes")
@@ -108,6 +195,7 @@ if PYQT_AVAILABLE:
             if self.account:
                 self.nickname_input.setText(self.account.nickname)
                 self.room_combo.setCurrentText(self.account.room)
+                self.balance_spin.setValue(float(getattr(self.account, 'balance', 0.0)))
                 self.notes_input.setText(self.account.notes)
         
         def get_account_data(self) -> dict:
@@ -120,6 +208,7 @@ if PYQT_AVAILABLE:
             return {
                 'nickname': self.nickname_input.text().strip(),
                 'room': self.room_combo.currentText(),
+                'balance': float(self.balance_spin.value()),
                 'notes': self.notes_input.text().strip()
             }
     
@@ -330,9 +419,9 @@ if PYQT_AVAILABLE:
                 "Nickname",
                 "Status",
                 "Window",
-                "ROI Ready",
+                "ROI Zones",
                 "Games",
-                "Bot Running"
+                "Bot Running",
             ])
             
             # Table settings
@@ -366,6 +455,13 @@ if PYQT_AVAILABLE:
             
             btn_layout.addStretch()
             
+            # Quick-find CoinPoker button
+            find_cp_btn = QPushButton("🪙 Find CoinPoker")
+            find_cp_btn.setToolTip("Auto-find a running CoinPoker window and assign it")
+            find_cp_btn.setStyleSheet("background-color: #1a4a6b; color: #7fd4ff; font-weight: bold;")
+            find_cp_btn.clicked.connect(self._on_find_coinpoker)
+            btn_layout.addWidget(find_cp_btn)
+
             capture_btn = QPushButton("🪟 Capture Window")
             capture_btn.clicked.connect(self._on_capture_window)
             btn_layout.addWidget(capture_btn)
@@ -387,24 +483,32 @@ if PYQT_AVAILABLE:
             
             layout.addLayout(btn_layout)
             
-            # Second row of buttons - Auto-Navigation Testing
-            auto_nav_layout = QHBoxLayout()
-            
-            test_auto_nav_btn = QPushButton("🤖 Test Auto-Navigation")
-            test_auto_nav_btn.setStyleSheet("background-color: #9900FF; color: white; font-weight: bold;")
-            test_auto_nav_btn.setToolTip("Test automatic UI detection and navigation")
-            test_auto_nav_btn.clicked.connect(self._on_test_auto_navigation)
-            auto_nav_layout.addWidget(test_auto_nav_btn)
-            
-            debug_viewer_btn = QPushButton("🔍 Open Debug Viewer")
+            # Second row: Auto-ROI + Debug viewer
+            row2 = QHBoxLayout()
+
+            auto_roi_btn = QPushButton("🎯 Auto-Detect ROI")
+            auto_roi_btn.setProperty("class", "primary")
+            auto_roi_btn.setToolTip(
+                "Automatically detect ROI zones using anchor template matching.\n"
+                "Requires window captured and bridge/vision available."
+            )
+            auto_roi_btn.clicked.connect(self._on_auto_detect_roi)
+            row2.addWidget(auto_roi_btn)
+
+            debug_viewer_btn = QPushButton("🔍 Debug Viewer")
             debug_viewer_btn.setStyleSheet("background-color: #FF6600; color: white; font-weight: bold;")
             debug_viewer_btn.setToolTip("Visual feedback: see what bot sees")
             debug_viewer_btn.clicked.connect(self._on_open_debug_viewer)
-            auto_nav_layout.addWidget(debug_viewer_btn)
-            
-            auto_nav_layout.addStretch()
-            
-            layout.addLayout(auto_nav_layout)
+            row2.addWidget(debug_viewer_btn)
+
+            test_auto_nav_btn = QPushButton("🤖 Test Navigation")
+            test_auto_nav_btn.setStyleSheet("background-color: #9900FF; color: white; font-weight: bold;")
+            test_auto_nav_btn.setToolTip("Test automatic UI detection and navigation")
+            test_auto_nav_btn.clicked.connect(self._on_test_auto_navigation)
+            row2.addWidget(test_auto_nav_btn)
+
+            row2.addStretch()
+            layout.addLayout(row2)
         
         def _on_add_account(self):
             """Add new account."""
@@ -421,7 +525,8 @@ if PYQT_AVAILABLE:
                 account = Account(
                     nickname=data['nickname'],
                     room=data['room'],
-                    notes=data['notes']
+                    notes=data['notes'],
+                    balance=data.get('balance', 0.0),
                 )
                 
                 self.accounts.append(account)
@@ -446,9 +551,10 @@ if PYQT_AVAILABLE:
                 account.nickname = data['nickname']
                 account.room = data['room']
                 account.notes = data['notes']
-                
+                account.balance = data.get('balance', account.balance)
+
                 self._update_table()
-                logger.info(f"Account updated: {account.nickname}")
+                logger.info(f"Account updated: {account.nickname} balance={account.balance:.0f}")
         
         def _on_remove_account(self):
             """Remove selected account."""
@@ -491,12 +597,22 @@ if PYQT_AVAILABLE:
                 if window:
                     account.window_info = WindowInfo(
                         window_id=window['window_id'],
-                        hwnd=window.get('hwnd'),  # Store HWND for direct capture
+                        hwnd=window.get('hwnd'),
                         window_title=window['title'],
                         window_type=WindowType.DESKTOP_CLIENT,
                         process_name=window.get('process_name'),
-                        position=window.get('position')
+                        position=window.get('position'),
                     )
+                    # Auto-detect poker client from title/process
+                    try:
+                        from launcher.models.account import PokerClient
+                        detected = _detect_poker_client(
+                            window['title'], window.get('process_name', ''))
+                        account.poker_client = PokerClient(detected)
+                        if detected == 'coinpoker':
+                            logger.info("CoinPoker window detected for %s", account.nickname)
+                    except Exception:
+                        pass
                     
                     # Update status
                     if account.status == AccountStatus.IDLE:
@@ -505,6 +621,71 @@ if PYQT_AVAILABLE:
                     self._update_table()
                     logger.info(f"Window captured for {account.nickname}: {window['title']}")
         
+
+        def _on_find_coinpoker(self):
+            """Auto-find a running CoinPoker window and assign it to selected account."""
+            row = self.table.currentRow()
+            if row < 0:
+                QMessageBox.information(self, "No Selection", "Select an account first.")
+                return
+            account = self.accounts[row]
+            found_raw = []
+            try:
+                from launcher.window_capture import WindowCapture as _WC
+                _wc = _WC()
+                wins = _wc.list_windows(filter_visible=True, min_width=400, min_height=300)
+                found_raw = [w for w in wins
+                             if "coinpoker" in (w.get("title","")).lower()
+                             or "coinpoker" in (w.get("process_name","")).lower()]
+            except Exception as exc:
+                logger.warning("CoinPoker search error: %s", exc)
+
+            if not found_raw:
+                # Try AutoWindowFinder
+                try:
+                    from launcher.auto_window_finder import AutoWindowFinder
+                    finder = AutoWindowFinder()
+                    matches = finder.find_all_poker()
+                    for m in matches:
+                        if "coinpoker" in (m.title or "").lower() or "coinpoker" in (m.process_name or "").lower():
+                            found_raw = [{"hwnd": m.hwnd, "title": m.title,
+                                          "process_name": m.process_name,
+                                          "position": (m.client_rect.x, m.client_rect.y,
+                                                       m.client_rect.w, m.client_rect.h)
+                                          if hasattr(m,"client_rect") and m.client_rect else None,
+                                          "window_id": str(m.hwnd)}]
+                            break
+                except Exception as exc2:
+                    logger.warning("AutoWindowFinder error: %s", exc2)
+
+            if not found_raw:
+                QMessageBox.warning(self, "CoinPoker Not Found",
+                    "No running CoinPoker window found.\n\nMake sure CoinPoker is open, "
+                    "then try again — or use 'Capture Window' to select manually.")
+                return
+
+            w = found_raw[0]
+            account.window_info = WindowInfo(
+                window_id=str(w.get("hwnd", w.get("window_id",""))),
+                hwnd=w.get("hwnd"),
+                window_title=w.get("title","CoinPoker"),
+                window_type=WindowType.DESKTOP_CLIENT,
+                process_name=w.get("process_name"),
+                position=w.get("position"),
+            )
+            try:
+                from launcher.models.account import PokerClient
+                account.poker_client = PokerClient.COINPOKER
+            except Exception:
+                pass
+            if account.status == AccountStatus.IDLE:
+                account.status = AccountStatus.READY if account.roi_configured else AccountStatus.IDLE
+            self._update_table()
+            title = w.get("title","CoinPoker")
+            QMessageBox.information(self, "CoinPoker Found",
+                f"CoinPoker assigned to {account.nickname}:\n{title}")
+            logger.info("CoinPoker auto-assigned to %s: %s", account.nickname, title)
+
         def _on_configure_roi(self):
             """Configure ROI for selected account."""
             row = self.table.currentRow()
@@ -612,14 +793,166 @@ if PYQT_AVAILABLE:
                 f"Bot will appear as READY but cannot interact with real poker."
             )
         
+        def _on_auto_detect_roi(self):
+            """Auto-detect ROI synchronously in main thread (no threading to avoid signal issues)."""
+            row = self.table.currentRow()
+            if row < 0:
+                QMessageBox.information(self, "No Selection", "Select an account first.")
+                return
+            account = self.accounts[row]
+            if not account.window_info or not account.window_info.hwnd:
+                QMessageBox.warning(self, "No Window Handle",
+                    "Capture a window first (Find CoinPoker or Capture Window).")
+                return
+
+            # Store current account reference (used by _on_roi_detected/_on_roi_detect_error)
+            self._roi_account = account
+
+            # Find the Auto-Detect button and disable only it (not the whole tab)
+            sender_btn = self.sender()
+            if sender_btn:
+                sender_btn.setEnabled(False)
+                sender_btn.setText("⏳ Detecting…")
+
+            try:
+                from bridge.screen_capture import ScreenCapture
+                sc = ScreenCapture()
+                img = sc.capture_full_window(hwnd=account.window_info.hwnd)
+                if img is None:
+                    raise RuntimeError("Could not capture window — is CoinPoker visible?")
+
+                import numpy as np
+                import cv2 as _cv2
+                if hasattr(img, "convert"):
+                    img = _cv2.cvtColor(np.array(img.convert("RGB")), _cv2.COLOR_RGB2BGR)
+
+                zones, anchors = [], []
+                try:
+                    from bridge.vision.anchor_detector import (
+                        detect_roi, load_config as _load_cfg)
+                    anchors_raw, zones_raw = detect_roi(img, config=_load_cfg())
+                    zones   = [z.to_dict() if hasattr(z, "to_dict") else z for z in zones_raw]
+                    anchors = [{"name": a.name, "x": a.x, "y": a.y,
+                                "confidence": round(a.confidence, 3)}
+                               for a in anchors_raw if hasattr(a, "name")]
+                except Exception as det_exc:
+                    logger.warning("anchor_detector unavailable: %s", det_exc)
+
+                if sender_btn:
+                    sender_btn.setEnabled(True)
+                    sender_btn.setText("🎯 Auto-Detect ROI")
+                self._on_roi_detected(zones, anchors)
+
+            except Exception as exc:
+                if sender_btn:
+                    sender_btn.setEnabled(True)
+                    sender_btn.setText("🎯 Auto-Detect ROI")
+                self._on_roi_detect_error(str(exc))
+        @pyqtSlot(list, list)
+        def _on_roi_detected(self, zones: list, anchors: list):
+            """Handle successful auto-ROI detection result."""
+            account = getattr(self, "_roi_account", None)
+            if account is None:
+                return
+
+            if not zones:
+                # Offer fallback
+                reply = QMessageBox.question(
+                    self,
+                    "No Zones Detected",
+                    f"No anchor zones detected for {account.nickname}.\n\n"
+                    "Possible reasons:\n"
+                    "• Poker window is not a supported layout\n"
+                    "• Anchor templates not configured\n"
+                    "• Window is obscured\n\n"
+                    "Would you like to use manual ROI drawing instead?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._on_configure_roi()
+                return
+
+            # Build readable summary
+            zone_lines = []
+            for z in zones:
+                if isinstance(z, dict):
+                    name = z.get("name", "?")
+                    x, y = z.get("x", 0), z.get("y", 0)
+                    w = z.get("w", z.get("width", 0))
+                    h = z.get("h", z.get("height", 0))
+                else:
+                    name = getattr(z, "name", "?")
+                    x, y = getattr(z, "x", 0), getattr(z, "y", 0)
+                    w = getattr(z, "w", getattr(z, "width", 0))
+                    h = getattr(z, "h", getattr(z, "height", 0))
+                zone_lines.append(f"  • {name}  ({x},{y})  {w}×{h}")
+
+            anchor_summary = (
+                f"\nAnchors found: {len(anchors)}\n"
+                + "\n".join(
+                    f"  ◉ {a['name']}  conf={a['confidence']:.2f}"
+                    for a in anchors
+                )
+                if anchors else "\nNo anchors found (fallback zones used)"
+            )
+
+            msg = (
+                f"Auto-ROI Detection Complete\n\n"
+                f"Account: {account.nickname}\n"
+                f"Zones found: {len(zones)}\n"
+                f"{anchor_summary}\n\n"
+                f"Zones:\n" + "\n".join(zone_lines) + "\n\n"
+                "Apply these zones to the account?"
+            )
+
+            reply = QMessageBox.question(
+                self, "Auto-ROI Result",
+                msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                # Convert to ROIZone list
+                roi_zones = []
+                for z in zones:
+                    if isinstance(z, dict):
+                        roi_zones.append(ROIZone(
+                            name=z.get("name", "zone"),
+                            x=int(z.get("x", 0)),
+                            y=int(z.get("y", 0)),
+                            width=int(z.get("w", z.get("width", 50))),
+                            height=int(z.get("h", z.get("height", 30))),
+                        ))
+                    else:
+                        roi_zones.append(z)
+                self._on_roi_saved(account, roi_zones)
+                logger.info(
+                    "Auto-ROI applied for %s: %d zones, %d anchors",
+                    account.nickname, len(roi_zones), len(anchors),
+                )
+
+        @pyqtSlot(str)
+        def _on_roi_detect_error(self, msg: str):
+            """Handle auto-ROI detection error."""
+            QMessageBox.critical(
+                self,
+                "Auto-ROI Failed",
+                f"Auto-ROI detection failed:\n\n{msg}\n\n"
+                "Make sure:\n"
+                "• bridge/vision/anchor_detector is installed\n"
+                "• numpy and opencv are available\n"
+                "• Window is visible and not minimized",
+            )
+            logger.error("Auto-ROI error: %s", msg)
+
         def _on_roi_saved(self, account: Account, zones: list):
             """Handle ROI configuration saved."""
             account.roi_configured = True
-            
-            # Update status
+
             if account.window_info.is_captured():
                 account.status = AccountStatus.READY
-            
+
             self._update_table()
             self.roi_configured.emit(account.account_id, zones)
             
@@ -912,9 +1245,20 @@ if PYQT_AVAILABLE:
                 window_text = account.window_info.window_title if account.window_info.is_captured() else "Not captured"
                 self.table.setItem(row, 3, QTableWidgetItem(window_text))
                 
-                # ROI Ready
-                roi_item = QTableWidgetItem("✓" if account.roi_configured else "✗")
-                roi_item.setForeground(QColor(0, 255, 0) if account.roi_configured else QColor(255, 100, 100))
+                # ROI Zones — show count if available, else ✓/✗
+                roi_zones = getattr(account, "roi_zones", None) or []
+                n_zones = len(roi_zones)
+                if n_zones > 0:
+                    roi_text = f"{n_zones} zones"
+                    roi_color = QColor(0, 220, 100)
+                elif account.roi_configured:
+                    roi_text = "✓ ready"
+                    roi_color = QColor(0, 200, 255)
+                else:
+                    roi_text = "✗ not set"
+                    roi_color = QColor(255, 100, 100)
+                roi_item = QTableWidgetItem(roi_text)
+                roi_item.setForeground(roi_color)
                 self.table.setItem(row, 4, roi_item)
                 
                 # Games

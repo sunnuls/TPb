@@ -38,42 +38,34 @@ logger = logging.getLogger(__name__)
 class SystemTrayManager(QObject):
     """
     System tray manager.
-    
+
     Features:
-    - Tray icon with menu
-    - Global hotkeys
-    - Quick actions
-    
+    - Tray icon with context menu (Show, Start All, Stop All, Emergency Stop, Exit)
+    - Double-click to show/raise main window
+    - update_status() for dynamic tooltip
+    - Global hotkeys (optional, requires 'keyboard' package)
+
     ⚠️ EDUCATIONAL NOTE:
         System tray for bot management interface.
     """
-    
-    # Signals
-    start_all_requested = pyqtSignal()
-    stop_all_requested = pyqtSignal()
+
+    start_all_requested   = pyqtSignal()
+    stop_all_requested    = pyqtSignal()
+    emergency_stop_requested = pyqtSignal()
     show_window_requested = pyqtSignal()
-    
+
     def __init__(self, app: QApplication, main_window):
-        """
-        Initialize system tray.
-        
-        Args:
-            app: QApplication instance
-            main_window: Main window instance
-        """
         super().__init__()
-        
+
         self.app = app
         self.main_window = main_window
-        
-        # Create tray icon
+
         self.tray_icon = QSystemTrayIcon(self.app)
-        
-        # Setup
+
         self._setup_tray_icon()
         self._setup_tray_menu()
         self._setup_hotkeys()
-        
+
         logger.info("System tray manager initialized")
     
     def _setup_tray_icon(self):
@@ -91,31 +83,41 @@ class SystemTrayManager(QObject):
     def _setup_tray_menu(self):
         """Setup tray context menu."""
         menu = QMenu()
-        
-        # Show window
+
         show_action = QAction("Show Window", self.app)
         show_action.triggered.connect(self._on_show_window)
         menu.addAction(show_action)
-        
+
         menu.addSeparator()
-        
-        # Start all
-        start_action = QAction("Start All Bots", self.app)
+
+        start_action = QAction("▶  Start All Bots", self.app)
         start_action.triggered.connect(self._on_start_all)
         menu.addAction(start_action)
-        
-        # Stop all
-        stop_action = QAction("Stop All Bots", self.app)
+
+        stop_action = QAction("■  Stop All Bots", self.app)
         stop_action.triggered.connect(self._on_stop_all)
         menu.addAction(stop_action)
-        
+
         menu.addSeparator()
-        
-        # Exit
+
+        emergency_action = QAction("🚨  EMERGENCY STOP", self.app)
+        emergency_action.triggered.connect(self._on_emergency_stop)
+        # Make it visually stand out via font colour
+        try:
+            from PyQt6.QtGui import QFont
+            f = emergency_action.font()
+            f.setBold(True)
+            emergency_action.setFont(f)
+        except Exception:
+            pass
+        menu.addAction(emergency_action)
+
+        menu.addSeparator()
+
         exit_action = QAction("Exit", self.app)
         exit_action.triggered.connect(self._on_exit)
         menu.addAction(exit_action)
-        
+
         self.tray_icon.setContextMenu(menu)
     
     def _setup_hotkeys(self):
@@ -168,7 +170,38 @@ class SystemTrayManager(QObject):
         """Stop all bots."""
         logger.info("Stop all bots requested (via tray)")
         self.stop_all_requested.emit()
-    
+
+    def _on_emergency_stop(self):
+        """Emergency stop — confirm then emit."""
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.critical(
+            self.main_window,
+            "EMERGENCY STOP",
+            "Immediately stop ALL bots?\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            logger.critical("EMERGENCY STOP from system tray")
+            self.emergency_stop_requested.emit()
+
+    def update_status(
+        self,
+        active_bots: int = 0,
+        total_bots: int = 0,
+        hands: int = 0,
+        hive_sessions: int = 0,
+    ) -> None:
+        """Update the tray icon tooltip with live stats."""
+        lines = [
+            "HIVE Launcher",
+            f"  Bots: {active_bots} active / {total_bots} total",
+            f"  Hands played: {hands:,}",
+        ]
+        if hive_sessions > 0:
+            lines.append(f"  HIVE sessions: {hive_sessions}  ⚠ COLLUSION ACTIVE")
+        self.tray_icon.setToolTip("\n".join(lines))
+
     def _on_hotkey_start_stop(self):
         """Handle hotkey for start/stop toggle."""
         logger.info("Hotkey triggered: Ctrl+Alt+S")

@@ -414,6 +414,90 @@ class CollusionCoordinator:
             f"Manipulations: {session.manipulations_count}"
         )
     
+    def set_real_actions(self, enabled: bool) -> None:
+        """Enable / disable real action execution (called from MainWindow on mode toggle)."""
+        self.enable_real_actions = enabled
+        if enabled and BRIDGE_AVAILABLE and self.real_executor is None:
+            try:
+                safety = self.safety or SafetyFramework.get_instance()
+                if safety.config.mode == SafetyMode.UNSAFE:
+                    self.real_executor = RealActionExecutor(safety=safety)
+                    logger.critical(
+                        "Real action executor ENABLED in CollusionCoordinator"
+                    )
+            except Exception as exc:
+                logger.error("set_real_actions: executor init failed: %s", exc)
+        elif not enabled:
+            self.real_executor = None
+            logger.info("Real action executor DISABLED in CollusionCoordinator")
+
+    def coordinate_hand(
+        self,
+        bot_id: str,
+        table_id: str,
+        hand_id: str,
+        hole_cards: List[str],
+        team_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Publish hole cards and retrieve collective state for a hand.
+
+        Called from each bot's game loop.  Returns a dict with:
+          - ``known_cards`` (List[str]) — all team cards seen so far
+          - ``is_complete`` (bool) — all 3 bots have shared
+
+        Args:
+            bot_id:     Calling bot's ID
+            table_id:   Table the hand is on
+            hand_id:    Unique hand identifier
+            hole_cards: This bot's hole cards
+            team_id:    Override team ID (defaults to first active session)
+        """
+        if not self.card_sharing:
+            return None
+
+        # Determine team_id from active sessions if not provided
+        if team_id is None:
+            active = self.get_active_sessions()
+            if active:
+                team_id = f"team_{active[0].session_id}"
+            else:
+                team_id = "default_team"
+
+        try:
+            # Publish this bot's cards
+            share = self.card_sharing.create_share(
+                bot_id=bot_id,
+                team_id=team_id,
+                table_id=table_id,
+                hole_cards=hole_cards,
+                hand_id=hand_id,
+            )
+            self.card_sharing.receive_share(share)
+
+            # Retrieve collective knowledge
+            knowledge = self.card_sharing.get_team_knowledge(team_id, table_id, hand_id)
+            if knowledge is None:
+                return {"known_cards": hole_cards, "is_complete": False}
+
+            known = knowledge.known_cards if hasattr(knowledge, "known_cards") else hole_cards
+            complete = knowledge.is_complete() if hasattr(knowledge, "is_complete") else False
+
+            # Update session stats
+            for sess in self.get_active_sessions():
+                if bot_id in sess.bot_ids:
+                    sess.card_shares_count += 1
+                    break
+
+            logger.debug(
+                "HIVE card-share: bot=%s team=%s known=%d complete=%s",
+                bot_id[:8], team_id[:12], len(known), complete,
+            )
+            return {"known_cards": list(known), "is_complete": complete}
+
+        except Exception as exc:
+            logger.warning("coordinate_hand error: %s", exc)
+            return None
+
     def get_active_sessions(self) -> List[CollusionSession]:
         """
         Get active collusion sessions.

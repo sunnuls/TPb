@@ -1,0 +1,13 @@
+{
+  "preset": "custom",
+  "aggression_level": 5,
+  "equity_threshold": 0.65,
+  "max_bet_multiplier": 3.0,
+  "delay_min": 0.30000000000000004,
+  "delay_max": 3.5,
+  "mouse_curve_intensity": 2,
+  "max_session_time": 60,
+  "auto_rejoin": false,
+  "enable_manipulation": false,
+  "enable_collusion": false
+}

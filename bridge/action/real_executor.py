@@ -170,8 +170,8 @@ class RealActionExecutor:
         
         # Configure pyautogui safety
         if PYAUTOGUI_AVAILABLE and pyautogui is not None:
-            pyautogui.FAILSAFE = True  # Move mouse to corner to abort
-            pyautogui.PAUSE = 0.1  # Minimum pause between calls
+            pyautogui.FAILSAFE = False  # Disabled: corner-abort causes FailSafeException freezes
+            pyautogui.PAUSE = 0.1
         
         # Statistics
         self.actions_executed = 0

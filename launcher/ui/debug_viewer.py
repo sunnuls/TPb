@@ -204,10 +204,12 @@ class DebugViewer(QWidget):
             logger.info(f"Captured: {w}x{h}")
             
             # Detect elements
-            elements = self.detector.detect_ui_elements(image)
+            all_elements = self.detector.detect_ui_elements(image)
+            # Filter out ad/banner regions (right side panel ~22%, oversized boxes)
+            elements = self._filter_noise_elements(all_elements, w, h)
             self.detected_elements = elements
             
-            logger.info(f"Detected {len(elements)} elements")
+            logger.info(f"Detected {len(all_elements)} elements → {len(elements)} after filter")
             
             # Find game mode buttons specifically
             game_buttons = self.detector.find_game_mode_buttons(elements)
@@ -393,6 +395,39 @@ class DebugViewer(QWidget):
         self.stats_label.setText("Cleared")
         self.current_image = None
         self.detected_elements = []
+
+    def _filter_noise_elements(self, elements, img_w: int, img_h: int):
+        """Filter out ad banners and noise elements.
+        
+        Removes:
+        - Oversized boxes (area > 8% of image — likely background/banner)
+        - Elements whose center is in the rightmost 22% of window (ad panel)
+        - Elements taller than 40% of image height (full-height ad strips)
+        """
+        img_area = img_w * img_h
+        ad_x_threshold = img_w * 0.78   # right 22% = ads
+        max_area       = img_area * 0.08 # 8% of image = oversized banner
+        max_height     = img_h * 0.40   # element taller than 40% = strip/banner
+
+        filtered = []
+        for e in elements:
+            ex  = getattr(e, "x", 0)
+            ey  = getattr(e, "y", 0)
+            ew  = getattr(e, "width",  getattr(e, "w", 0))
+            eh  = getattr(e, "height", getattr(e, "h", 0))
+            ecx = ex + ew / 2  # center x
+
+            # Skip elements centered in the right-side ad panel
+            if ecx > ad_x_threshold:
+                continue
+            # Skip oversized banner boxes
+            if ew * eh > max_area:
+                continue
+            # Skip full-height strips
+            if eh > max_height and ew > img_w * 0.15:
+                continue
+            filtered.append(e)
+        return filtered
 
 
 # Educational example

@@ -1,1281 +1,598 @@
-# TPb: Live-RTA Overlay Poker Assistant - Development Roadmap
+# HIVE POKER BOT — ПОЛНЫЙ РОУДМАП
 
-**Last Updated:** 2026-01-14  
-**Status:** In Development  
-**Target Release:** Q2 2026
-
----
-
-## 1. Project Overview
-
-TPb is a real-time action (RTA) overlay assistant designed for live poker stream analysis. It provides:
-- Real-time player statistics and position analysis
-- Community card visualization
-- Hand equity calculations and recommendations
-- Game theory optimal (GTO) strategy overlays
-- Multi-table tournament (MTT) stack analysis
-- Stream-friendly UI overlay
+> Создан: 03.03.2026  
+> Статус: В работе
 
 ---
 
-## 2. System Architecture
+## ТЕКУЩЕЕ СОСТОЯНИЕ
 
-### 2.1 High-Level Architecture
+### Что работает:
+- PyQt6 GUI запускается, все вкладки, системный трей
+- Win32 захват окна (PrintWindow) — лобби PS
+- `auto_find_window()` — находит лобби PS по заголовку
+- Anchor template matching — dealer_button, table_border, table_corner, chip_icon
+- OCR сканирование лобби — строки столов, блайнды, buy-in суммы
+- `read_ps_balance()` — читает баланс (нестабильно, но работает)
+- `join_table()` — фокус окна, клик по строке, находит кнопку "Играть" и кликает
+- DRY_RUN режим — полная симуляция цикла работает end-to-end
+- Таймеры, лимиты сессии, реконнект попытки, emergency fold
+- HumanTiming — задержки с нормальным распределением
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend Layer (Overlay)                  │
-│                  (React + TypeScript + WebGL)                │
-├─────────────────────────────────────────────────────────────┤
-│                    WebSocket Bridge Layer                     │
-│              (Real-time Data Synchronization)                │
-├─────────────────────────────────────────────────────────────┤
-│                   Backend Service Layer                       │
-│     (Node.js + Express + Socket.io + Worker Threads)        │
-├─────────────────────────────────────────────────────────────┤
-│                   Analytics Engine Layer                      │
-│     (Equity Calc, GTO Engine, Statistical Analysis)         │
-├─────────────────────────────────────────────────────────────┤
-│                   Data Integration Layer                      │
-│     (Stream Parsers, Game State Management, Database)       │
-├─────────────────────────────────────────────────────────────┤
-│                   External Services Layer                     │
-│     (Streaming APIs, PokerStars API, GTO Solvers, etc.)    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 2.2 Core Components
-
-#### Frontend
-- **Overlay UI**: Real-time display of statistics, charts, and recommendations
-- **Position Indicator**: Visual representation of player positions
-- **Equity Display**: Real-time equity calculations with confidence bands
-- **Strategy Panel**: GTO-based action recommendations
-- **Settings Manager**: Theme, notification, and feature toggles
-
-#### Backend
-- **State Manager**: Centralized game state management
-- **Equity Calculator**: Multi-way pot equity computations
-- **GTO Engine**: Strategy recommendations based on position and stack depths
-- **Data Parser**: Parse stream feeds, table information, and player actions
-- **WebSocket Server**: Maintain real-time connections with frontend
-
-#### Analytics
-- **Statistical Analysis**: Player tendencies, fold-to-bet frequencies
-- **Range Constructor**: Build opponent ranges based on action history
-- **EV Calculator**: Expected value calculations for decisions
-- **Simulation Engine**: Monte Carlo simulations for equity approximation
-
-#### Data Layer
-- **Game State Store**: In-memory cache of current game state
-- **History DB**: PostgreSQL for game history and player stats
-- **Config DB**: Solver results, GTO tables, and precomputed strategies
+### Что сломано / не работает:
+- **BUY-IN ДИАЛОГ** — главный блокер, никогда не находится → бот не садится за стол в LIVE режиме
+- **MouseGuard** — отключён, `pynput` не установлен
+- **Live game state reading** — `NumericParser` падает обратно в симуляцию (импорт-проблема)
+- **OCR кириллицы** — имена столов мусор (`"co) 6M Xongem"` вместо русского)
+- **Баланс нестабилен** — 700001 → 8281 → 0 на одном экране в трёх читках подряд
+- **LIVE полный цикл** — блокируется на buy-in шаге
 
 ---
 
-## 3. Project File Structure
+## ФАЗА 0 — ПОДГОТОВКА И ФУНДАМЕНТ
+*(~2-3 часа, делается один раз)*
 
+### 0.1 Установка недостающих зависимостей
 ```
-TPb/
-├── README.md
-├── ROADMAP.md
-├── package.json
-├── tsconfig.json
-├── jest.config.js
-├── .env.example
-│
-├── backend/
-│   ├── src/
-│   │   ├── index.ts                 # Main entry point
-│   │   ├── server.ts               # Express/Socket.io setup
-│   │   │
-│   │   ├── types/
-│   │   │   ├── game.ts             # Game state interfaces
-│   │   │   ├── player.ts           # Player data structures
-│   │   │   ├── poker.ts            # Poker-specific types
-│   │   │   └── websocket.ts        # WS message formats
-│   │   │
-│   │   ├── services/
-│   │   │   ├── gameStateService.ts      # Game state management
-│   │   │   ├── equityService.ts         # Equity calculations
-│   │   │   ├── gtoService.ts            # GTO recommendations
-│   │   │   ├── playerAnalysisService.ts # Player stat analysis
-│   │   │   ├── streamParserService.ts   # Stream parsing
-│   │   │   └── notificationService.ts   # Alert management
-│   │   │
-│   │   ├── controllers/
-│   │   │   ├── gameController.ts    # Game endpoints
-│   │   │   ├── playerController.ts  # Player endpoints
-│   │   │   └── configController.ts  # Configuration endpoints
-│   │   │
-│   │   ├── parsers/
-│   │   │   ├── streamParser.ts      # Stream format parsing
-│   │   │   ├── tableParser.ts       # Table state parsing
-│   │   │   └── actionParser.ts      # Action parsing
-│   │   │
-│   │   ├── engines/
-│   │   │   ├── equityEngine.ts      # Equity calculation engine
-│   │   │   ├── gtoEngine.ts         # GTO strategy engine
-│   │   │   └── simulationEngine.ts  # Monte Carlo simulator
-│   │   │
-│   │   ├── db/
-│   │   │   ├── connection.ts        # Database setup
-│   │   │   ├── migrations/          # Database migrations
-│   │   │   └── repositories/
-│   │   │       ├── playerRepo.ts
-│   │   │       ├── gameRepo.ts
-│   │   │       └── statsRepo.ts
-│   │   │
-│   │   ├── utils/
-│   │   │   ├── cardUtils.ts         # Card operations
-│   │   │   ├── mathUtils.ts         # Mathematical helpers
-│   │   │   ├── logger.ts            # Logging utility
-│   │   │   └── validators.ts        # Input validators
-│   │   │
-│   │   ├── middleware/
-│   │   │   ├── auth.ts              # Authentication
-│   │   │   ├── errorHandler.ts      # Error handling
-│   │   │   └── rateLimiter.ts       # Rate limiting
-│   │   │
-│   │   └── workers/
-│   │       ├── equityWorker.ts      # Heavy computation worker
-│   │       └── simulationWorker.ts  # Simulation worker
-│   │
-│   ├── tests/
-│   │   ├── unit/
-│   │   ├── integration/
-│   │   └── performance/
-│   │
-│   └── docker/
-│       └── Dockerfile.backend
-│
-├── frontend/
-│   ├── public/
-│   │   └── index.html
-│   │
-│   ├── src/
-│   │   ├── index.tsx
-│   │   ├── App.tsx
-│   │   ├── vite-env.d.ts
-│   │   │
-│   │   ├── types/
-│   │   │   ├── game.ts
-│   │   │   ├── ui.ts
-│   │   │   └── api.ts
-│   │   │
-│   │   ├── components/
-│   │   │   ├── Overlay/
-│   │   │   │   ├── Overlay.tsx
-│   │   │   │   └── Overlay.module.css
-│   │   │   │
-│   │   │   ├── TableView/
-│   │   │   │   ├── TableView.tsx
-│   │   │   │   ├── PlayerPosition.tsx
-│   │   │   │   ├── CommunityCards.tsx
-│   │   │   │   └── TableView.module.css
-│   │   │   │
-│   │   │   ├── StatisticsPanel/
-│   │   │   │   ├── StatisticsPanel.tsx
-│   │   │   │   ├── EquityDisplay.tsx
-│   │   │   │   ├── RangeChart.tsx
-│   │   │   │   └── Stats.module.css
-│   │   │   │
-│   │   │   ├── StrategyPanel/
-│   │   │   │   ├── StrategyPanel.tsx
-│   │   │   │   ├── RecommendationCard.tsx
-│   │   │   │   └── Strategy.module.css
-│   │   │   │
-│   │   │   ├── SettingsPanel/
-│   │   │   │   ├── SettingsPanel.tsx
-│   │   │   │   ├── ThemeToggle.tsx
-│   │   │   │   └── Settings.module.css
-│   │   │   │
-│   │   │   └── Common/
-│   │   │       ├── Card.tsx
-│   │   │       ├── Badge.tsx
-│   │   │       └── Spinner.tsx
-│   │   │
-│   │   ├── hooks/
-│   │   │   ├── useGameState.ts      # Game state hook
-│   │   │   ├── useWebSocket.ts      # WS connection hook
-│   │   │   ├── useEquityCalc.ts     # Equity calculation hook
-│   │   │   └── useLocalStorage.ts   # Local storage hook
-│   │   │
-│   │   ├── services/
-│   │   │   ├── websocketService.ts  # WS client
-│   │   │   ├── apiService.ts        # API client
-│   │   │   ├── storageService.ts    # Local storage
-│   │   │   └── themeService.ts      # Theme management
-│   │   │
-│   │   ├── utils/
-│   │   │   ├── cardUtils.ts
-│   │   │   ├── formatters.ts
-│   │   │   └── validators.ts
-│   │   │
-│   │   ├── styles/
-│   │   │   ├── globals.css
-│   │   │   ├── variables.css
-│   │   │   └── animations.css
-│   │   │
-│   │   └── constants/
-│   │       ├── gameConstants.ts
-│   │       ├── uiConstants.ts
-│   │       └── messages.ts
-│   │
-│   ├── tests/
-│   │   ├── unit/
-│   │   ├── integration/
-│   │   └── e2e/
-│   │
-│   ├── vite.config.ts
-│   ├── tailwind.config.js
-│   └── docker/
-│       └── Dockerfile.frontend
-│
-├── shared/
-│   ├── src/
-│   │   ├── types/
-│   │   │   ├── poker.ts            # Shared poker types
-│   │   │   ├── websocket.ts        # Shared WS types
-│   │   │   └── api.ts              # Shared API types
-│   │   │
-│   │   ├── constants/
-│   │   │   ├── cards.ts
-│   │   │   ├── positions.ts
-│   │   │   └── limits.ts
-│   │   │
-│   │   └── utils/
-│   │       ├── cardUtils.ts
-│   │       └── validators.ts
-│   │
-│   └── package.json
-│
-├── docs/
-│   ├── API.md
-│   ├── ARCHITECTURE.md
-│   ├── SETUP.md
-│   ├── CONTRIBUTING.md
-│   └── GTO_ENGINE.md
-│
-├── docker-compose.yml
-├── .dockerignore
-├── .gitignore
-└── .env.example
+pip install pynput
+pip install dxcam
+pip install easyocr
+pip install pywin32 --upgrade
+```
+- [ ] `pynput` — для MouseGuard
+- [ ] `easyocr` — замена Tesseract для кириллицы
+- [ ] Проверить что все зависимости в `requirements.txt`
+
+### 0.2 Создание системы debug-скриншотов
+
+- [ ] Папка `debug_screenshots/` с авто-сохранением при каждом важном событии
+- [ ] Скриншоты при: сканировании лобби, клике по столу, ожидании диалога, открытии стола
+- [ ] Каждый скриншот: метка времени + название события
+- [ ] Флаг `debug_screenshots=True/False` в настройках
+
+### 0.3 Режим диагностики в GUI
+
+- [ ] Новая вкладка "Debug" или кнопка "Diagnostic Run"  
+- [ ] Кнопка "Что видит бот" — снимает окно PS, показывает рядом что нашёл OCR, template matching, координаты кликов
+- [ ] Кнопка "Spy Windows" — показывает все открытые окна PS (HWND, класс, размер, тип)
+
+### 0.4 Стабилизация конфигурации аккаунтов
+
+- [ ] `accounts.json` пуст при каждом старте — починить сохранение
+- [ ] Аккаунты сохраняются при добавлении через GUI
+- [ ] При старте загружаются из файла
+
+---
+
+## ФАЗА 1 — ПОНИМАНИЕ ЭКРАНА (WINDOW AWARENESS)
+*(~1-2 дня)*
+
+### 1.1 Система отслеживания всех окон PS
+
+**Цель:** бот в любой момент знает какие окна открыты и что в них.
+
+#### 1.1.1 WindowTracker — новый модуль `launcher/window_tracker.py`
+
+- [ ] `get_all_ps_windows()` — список всех HWND окон PokerStars
+- [ ] Для каждого HWND определяет тип: `LOBBY`, `TABLE`, `BUYIN_DIALOG`, `TOURNAMENT`, `CASHIER`, `UNKNOWN`
+- [ ] Определение по: размер окна + заголовок + класс окна (`win32gui.GetClassName`)
+- [ ] Обновление каждые 0.5 секунды в фоновом потоке
+- [ ] События: `on_window_opened(hwnd, type)`, `on_window_closed(hwnd)`, `on_window_focused(hwnd)`
+
+#### 1.1.2 Классификация типов окон
+```
+LOBBY:         класс "Qt5QWindowIcon" + заголовок "PokerStars" без "Table"
+TABLE:         класс "PokerStarsTableFrameClass" ИЛИ заголовок содержит "Table"
+BUYIN_DIALOG:  малое окно от процесса PS, класс "#32770" или кастомный PS диалог
+CASHIER:       заголовок содержит "Cashier" / "Касса"
 ```
 
----
-
-## 4. Implementation Phases
-
-### Phase 1: Foundation & Core Services (Weeks 1-4)
-
-**Goals:**
-- Set up project structure and build pipeline
-- Implement core type system and utilities
-- Build basic WebSocket infrastructure
-- Create game state management
-
-**Tasks:**
-1. Initialize monorepo structure with shared types
-2. Set up Express + Socket.io backend
-3. Create React + TypeScript frontend scaffold
-4. Implement game state interfaces
-5. Build WebSocket communication layer
-6. Create database schema
-7. Set up CI/CD pipeline
-
-**Deliverables:**
-- Working project scaffold
-- Type system foundations
-- Basic WebSocket communication
-- Development environment documentation
-
-### Phase 2: Core Poker Engine (Weeks 5-8)
-
-**Goals:**
-- Implement equity calculation engine
-- Build card and hand evaluation utilities
-- Create basic strategy recommendation system
-- Develop player analysis framework
-
-**Tasks:**
-1. Implement Omaha/Texas Hold'em hand evaluation
-2. Build equity calculator with multi-way pot support
-3. Create range constructor for opponent modeling
-4. Implement basic GTO tables for common scenarios
-5. Build player statistics aggregation
-6. Create action history parser
-
-**Deliverables:**
-- Functional equity calculator (accurate to 4 decimal places)
-- Hand evaluation library
-- Basic GTO recommendations
-- Player stat tracking
-
-### Phase 3: Stream Integration & Parsers (Weeks 9-12)
-
-**Goals:**
-- Implement stream data parsers
-- Build real-time table state tracking
-- Create player action capture system
-- Develop notification system
-
-**Tasks:**
-1. Build stream feed parsers (generic format)
-2. Implement OCR for real table states
-3. Create action capture and validation
-4. Build notification/alert system
-5. Implement player position tracking
-6. Create hand history capture
-
-**Deliverables:**
-- Working stream parser
-- Real-time table state tracking
-- Player action capture
-- Basic notification system
-
-### Phase 4: Frontend Overlay UI (Weeks 13-16)
-
-**Goals:**
-- Build responsive overlay UI
-- Create visualization components
-- Implement settings and customization
-- Build performance-optimized rendering
-
-**Tasks:**
-1. Create main overlay component
-2. Build table visualization
-3. Implement statistics panel
-4. Create strategy recommendation display
-5. Build settings/configuration UI
-6. Optimize rendering performance
-7. Add theme system
-
-**Deliverables:**
-- Complete overlay UI
-- All visualization components
-- Settings panel
-- Performance optimized (<60ms latency)
-
-### Phase 5: Advanced Analytics (Weeks 17-20)
-
-**Goals:**
-- Implement advanced statistical analysis
-- Build trend detection
-- Create exploitative strategy recommendations
-- Develop player profiling
-
-**Tasks:**
-1. Build advanced statistical analysis engine
-2. Implement trend detection algorithms
-3. Create exploitative strategy layer
-4. Build player tendency profiler
-5. Implement variance analysis
-6. Create leakfinder algorithms
-
-**Deliverables:**
-- Advanced analytics engine
-- Player profiling system
-- Exploitative recommendations
-- Trend detection system
-
-### Phase 6: Multi-Table & Tournament Mode (Weeks 21-24)
-
-**Goals:**
-- Implement multi-table tournament support
-- Build stack depth analysis
-- Create ICM calculations
-- Develop tournament strategy overlays
-
-**Tasks:**
-1. Build multi-table state manager
-2. Implement ICM calculations
-3. Create chip EV to cash EV converter
-4. Build tournament strategy recommendations
-5. Implement blind progression tracking
-6. Create payout structure analyzer
-
-**Deliverables:**
-- Multi-table support
-- ICM calculator
-- Tournament strategy recommendations
-- Stack depth analysis
-
-### Phase 7: Testing & Optimization (Weeks 25-26)
-
-**Goals:**
-- Comprehensive test coverage
-- Performance optimization
-- Security hardening
-- Load testing
-
-**Tasks:**
-1. Write comprehensive test suite (>80% coverage)
-2. Performance profiling and optimization
-3. Security audit
-4. Load testing
-5. Documentation completion
-6. Release preparation
-
-**Deliverables:**
-- >80% test coverage
-- Performance benchmarks
-- Security report
-- Complete documentation
-- v1.0.0 release
-
----
-
-## 5. Technology Stack
-
-### Backend
-- **Runtime**: Node.js 20+
-- **Framework**: Express.js
-- **Real-time**: Socket.io
-- **Language**: TypeScript
-- **Database**: PostgreSQL (primary), Redis (caching)
-- **Workers**: Worker Threads for heavy computation
-- **Testing**: Jest + Supertest
-
-### Frontend
-- **Framework**: React 18+
-- **Language**: TypeScript
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS + CSS Modules
-- **State**: React Hooks + Context API (or Zustand)
-- **Real-time**: Socket.io-client
-- **Testing**: Vitest + React Testing Library
-- **Charts**: Recharts or Chart.js
-
-### Infrastructure
-- **Containerization**: Docker + Docker Compose
-- **Orchestration**: Optional Kubernetes support
-- **CI/CD**: GitHub Actions
-- **Monitoring**: Optional Prometheus + Grafana
-- **Logging**: Winston + ELK Stack (optional)
-
----
-
-## 6. Code Examples
-
-### 6.1 Backend: Core Equity Calculator
-
-```typescript
-// backend/src/engines/equityEngine.ts
-
-import { Card, Hand, Equity } from '../types/poker';
-import { cardToIndex, cardsToMask } from '../utils/cardUtils';
-
-export interface EquityCalculatorOptions {
-  maxIterations?: number;
-  precision?: number;
-  method?: 'exact' | 'monte-carlo';
-}
-
-export class EquityEngine {
-  private readonly iterations: number;
-  private readonly precision: number;
-  private readonly method: 'exact' | 'monte-carlo';
-
-  constructor(options: EquityCalculatorOptions = {}) {
-    this.iterations = options.maxIterations || 100000;
-    this.precision = options.precision || 4;
-    this.method = options.method || 'monte-carlo';
-  }
-
-  /**
-   * Calculate equity for multiple hands
-   * @param hands - Array of player hands [cards, ...]
-   * @param board - Community cards on board (0-5 cards)
-   * @param dead - Dead cards
-   * @returns Equity percentages for each hand
-   */
-  calculateEquity(
-    hands: Card[][],
-    board: Card[],
-    dead: Card[] = []
-  ): Equity[] {
-    if (this.method === 'exact' && board.length >= 3) {
-      return this.calculateExactEquity(hands, board, dead);
-    }
-    return this.calculateMonteCarloEquity(hands, board, dead);
-  }
-
-  private calculateExactEquity(
-    hands: Card[][],
-    board: Card[],
-    dead: Card[]
-  ): Equity[] {
-    const numHands = hands.length;
-    const wins = new Array(numHands).fill(0);
-    const ties = new Array(numHands).fill(0);
-    const losses = new Array(numHands).fill(0);
-    let totalOutcomes = 0;
-
-    const usedCards = new Set<string>();
-    hands.forEach(hand => hand.forEach(card => usedCards.add(card)));
-    board.forEach(card => usedCards.add(card));
-    dead.forEach(card => usedCards.add(card));
-
-    const remainingCards = this.getRemainingCards(usedCards);
-    const boardSize = board.length;
-    const neededCards = 5 - boardSize;
-
-    // Generate all possible boards
-    const possibleBoards = this.generateCombinations(remainingCards, neededCards);
-
-    possibleBoards.forEach(boardAddition => {
-      const finalBoard = [...board, ...boardAddition];
-      const handStrengths = hands.map(hand => this.evaluateHand(hand, finalBoard));
-      const maxStrength = Math.max(...handStrengths);
-
-      handStrengths.forEach((strength, idx) => {
-        if (strength === maxStrength) {
-          const tiePlayers = handStrengths.filter(s => s === strength).length;
-          ties[idx] += 1 / tiePlayers;
-        } else if (strength > 0) {
-          losses[idx] += 1;
-        }
-      });
-
-      totalOutcomes++;
-    });
-
-    return hands.map((_, idx) => ({
-      equity: Number((ties[idx] / totalOutcomes).toFixed(this.precision)),
-      confidence: 1.0,
-      wins: wins[idx],
-      ties: ties[idx],
-      losses: losses[idx],
-    }));
-  }
-
-  private calculateMonteCarloEquity(
-    hands: Card[][],
-    board: Card[],
-    dead: Card[]
-  ): Equity[] {
-    const numHands = hands.length;
-    const wins = new Array(numHands).fill(0);
-    const ties = new Array(numHands).fill(0);
-
-    const usedCards = new Set<string>();
-    hands.forEach(hand => hand.forEach(card => usedCards.add(card)));
-    board.forEach(card => usedCards.add(card));
-    dead.forEach(card => usedCards.add(card));
-
-    const remainingCards = this.getRemainingCards(usedCards);
-    const boardSize = board.length;
-    const neededCards = 5 - boardSize;
-
-    for (let i = 0; i < this.iterations; i++) {
-      const randomBoard = this.getRandomSample(remainingCards, neededCards);
-      const finalBoard = [...board, ...randomBoard];
-      const handStrengths = hands.map(hand => this.evaluateHand(hand, finalBoard));
-      const maxStrength = Math.max(...handStrengths);
-
-      handStrengths.forEach((strength, idx) => {
-        if (strength === maxStrength) {
-          const tiePlayers = handStrengths.filter(s => s === strength).length;
-          ties[idx] += 1 / tiePlayers;
-        }
-      });
-    }
-
-    const variance = this.estimateVariance(ties, this.iterations);
-    const stdError = Math.sqrt(variance / this.iterations);
-
-    return hands.map((_, idx) => ({
-      equity: Number((ties[idx] / this.iterations).toFixed(this.precision)),
-      confidence: this.calculateConfidence(stdError),
-      wins: ties[idx],
-      ties: 0,
-      losses: this.iterations - ties[idx],
-    }));
-  }
-
-  private evaluateHand(hand: Card[], board: Card[]): number {
-    // Implement hand evaluation (returns strength ranking)
-    // This would use a lookup table or fast hand evaluator
-    const allCards = [...hand, ...board];
-    return this.rankHand(allCards);
-  }
-
-  private rankHand(cards: Card[]): number {
-    // Placeholder for hand ranking logic
-    // In production, use a fast hand evaluator like TwoPlusTwoEvaluator
-    return 0;
-  }
-
-  private generateCombinations(cards: Card[], k: number): Card[][] {
-    // Generate all k-combinations of cards
-    const result: Card[][] = [];
-    const n = cards.length;
-
-    const helper = (start: number, combo: Card[]) => {
-      if (combo.length === k) {
-        result.push([...combo]);
-        return;
-      }
-      for (let i = start; i < n; i++) {
-        combo.push(cards[i]);
-        helper(i + 1, combo);
-        combo.pop();
-      }
-    };
-
-    helper(0, []);
-    return result;
-  }
-
-  private getRandomSample(cards: Card[], k: number): Card[] {
-    const sample: Card[] = [];
-    const available = [...cards];
-
-    for (let i = 0; i < k && available.length > 0; i++) {
-      const idx = Math.floor(Math.random() * available.length);
-      sample.push(available[idx]);
-      available.splice(idx, 1);
-    }
-
-    return sample;
-  }
-
-  private getRemainingCards(usedCards: Set<string>): Card[] {
-    const allCards = this.getAllCards();
-    return allCards.filter(card => !usedCards.has(card));
-  }
-
-  private getAllCards(): Card[] {
-    const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
-    const suits = ['s', 'h', 'd', 'c'];
-    const cards: Card[] = [];
-
-    for (const rank of ranks) {
-      for (const suit of suits) {
-        cards.push(`${rank}${suit}` as Card);
-      }
-    }
-
-    return cards;
-  }
-
-  private estimateVariance(values: number[], n: number): number {
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const squaredDiffs = values.map(v => Math.pow(v / n - mean, 2));
-    return squaredDiffs.reduce((a, b) => a + b, 0) / values.length;
-  }
-
-  private calculateConfidence(stdError: number): number {
-    return Math.max(0, 1 - stdError);
-  }
-}
+#### 1.1.3 Функция классификации с fallback
+```python
+def classify_window(hwnd) -> WindowType:
+    # 1. По классу окна (самый надёжный)
+    # 2. По заголовку
+    # 3. По размеру (диалог = маленький)
+    # 4. По скриншоту + OCR (последний резерв)
+```
+- [ ] Реализовать `classify_window(hwnd)`
+- [ ] Покрыть тестом `tests/test_window_tracker.py`
+
+### 1.2 Диалог Buy-in — полная переработка ⚠️ ГЛАВНЫЙ БЛОКЕР
+
+#### 1.2.1 Диагностика диалога (нужна помощь пользователя)
+
+**Инструмент:** `tools/spy_windows.py`
+
+```python
+import win32gui, win32process
+def enum_callback(hwnd, results):
+    if win32gui.IsWindowVisible(hwnd):
+        title = win32gui.GetWindowText(hwnd)
+        cls = win32gui.GetClassName(hwnd)
+        rect = win32gui.GetWindowRect(hwnd)
+        results.append((hwnd, title, cls, rect))
+results = []
+win32gui.EnumWindows(enum_callback, results)
+for r in results:
+    print(r)
 ```
 
-### 6.2 Backend: Game State Service
+**Действие пользователя:**
+1. Открыть PS лобби
+2. Кликнуть вручную на любой стол — появится диалог buy-in
+3. НЕ ЗАКРЫВАТЬ диалог
+4. Запустить скрипт, прислать вывод
 
-```typescript
-// backend/src/services/gameStateService.ts
+#### 1.2.2 После диагностики — переписать `handle_buyin_dialog`
 
-import { GameState, PlayerState, Action } from '../types/game';
-import { Card, Position } from '../types/poker';
-import { EventEmitter } from 'events';
+- [x] Заменить size-based поиск на поиск по заголовку 'Бай-ин' (первичный метод)
+- [x] Добавить `_find_buyin_dialog_hwnd()` — надёжный поиск по title → class → size
+- [x] Добавить `_analyze_buyin_dialog_children()` — находит edit/min/max/cancel/ok по дочерним HWND
+- [x] Добавить `_handle_buyin_via_hwnd()` — кликает MAX затем OK напрямую по координатам
+- [x] `handle_buyin_dialog()` переписан: HWND-метод первым, OCR как fallback
+- [x] Протестировано: edit(1672,580), min(1384,623), max(1699,623), cancel(1453,763), ok(1625,763)
 
-export class GameStateService extends EventEmitter {
-  private gameState: GameState | null = null;
-  private actionHistory: Action[] = [];
-  private maxHistorySize = 10000;
+#### 1.2.3 Таймаут и повторные попытки
+- [x] Таймаут увеличен с 8 до 15 секунд
+- [ ] Если не появился → retry click на стол
+- [ ] При любом сбое → сохранить debug скриншот
 
-  /**
-   * Initialize a new game
-   */
-  initializeGame(
-    players: PlayerState[],
-    buttonPosition: Position,
-    smallBlind: number,
-    bigBlind: number
-  ): GameState {
-    this.gameState = {
-      id: this.generateGameId(),
-      players,
-      buttonPosition,
-      blinds: { small: smallBlind, big: bigBlind },
-      pot: 0,
-      board: [],
-      street: 'preflop',
-      currentPlayerIdx: this.getSmallBlindPosition(players, buttonPosition),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      status: 'active',
-    };
+### 1.3 Определение открытия окна стола
 
-    this.actionHistory = [];
-    this.emit('gameInitialized', this.gameState);
-    return this.gameState;
-  }
+#### 1.3.1 `wait_for_new_table_window(known_hwnds, timeout=30)`
+```python
+def wait_for_new_table_window(known_hwnds: set, timeout=30) -> Optional[int]:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        current = get_all_ps_table_hwnds()
+        new = current - known_hwnds
+        if new:
+            return new.pop()
+        time.sleep(0.5)
+    return None
+```
+- [ ] Реализовать функцию
+- [ ] Вызывать после подтверждения buy-in
 
-  /**
-   * Record a player action
-   */
-  recordAction(
-    playerIdx: number,
-    action: 'fold' | 'check' | 'call' | 'raise' | 'all-in' | 'bet',
-    amount: number = 0
-  ): Action {
-    if (!this.gameState) {
-      throw new Error('No active game state');
-    }
+#### 1.3.2 Переместить окно стола на передний план
+```python
+def bring_table_to_front(hwnd):
+    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(hwnd)
+    win32gui.BringWindowToTop(hwnd)
+    # Если окно за пределами экрана — переместить
+    rect = win32gui.GetWindowRect(hwnd)
+    if rect[0] < -1000 or rect[1] < -1000:
+        win32gui.SetWindowPos(hwnd, None, 100, 100, 0, 0,
+                              win32con.SWP_NOSIZE | win32con.SWP_NOZORDER)
+```
+- [ ] Реализовать `bring_table_to_front(hwnd)`
 
-    const newAction: Action = {
-      playerIdx,
-      action,
-      amount,
-      timestamp: new Date(),
-      street: this.gameState.street,
-      potAtAction: this.gameState.pot,
-      stackAtAction: this.gameState.players[playerIdx].stack,
-    };
+#### 1.3.3 Привязка окна стола к BotInstance
+- [ ] `BotInstance` хранит `self.table_hwnd: Optional[int]`
+- [ ] После нахождения TABLE окна — привязать к боту
+- [ ] Все скриншоты и клики — только через этот HWND
 
-    this.actionHistory.push(newAction);
-    this.trimHistory();
+---
 
-    // Update player state
-    const player = this.gameState.players[playerIdx];
-    if (action === 'fold') {
-      player.folded = true;
-    } else if (action !== 'check') {
-      player.stack -= amount;
-      this.gameState.pot += amount;
-    }
+## ФАЗА 2 — OCR И ЧТЕНИЕ СОСТОЯНИЯ СТОЛА
+*(~1-2 дня)*
 
-    this.gameState.updatedAt = new Date();
-    this.emit('actionRecorded', newAction);
+### 2.1 Улучшение OCR для кириллицы
 
-    return newAction;
-  }
+#### 2.1.1 Замена Tesseract на EasyOCR
+```python
+# launcher/vision/ocr_engine.py — новый модуль
+import easyocr
+reader = easyocr.Reader(['ru', 'en'], gpu=False)  # один раз при старте
 
-  /**
-   * Update community cards (board)
-   */
-  updateBoard(cards: Card[], street: 'flop' | 'turn' | 'river'): void {
-    if (!this.gameState) {
-      throw new Error('No active game state');
-    }
+def ocr_text(image, lang='ru+en') -> str:
+    results = reader.readtext(image)
+    return ' '.join([r[1] for r in results])
+```
+- [ ] Создать `launcher/vision/ocr_engine.py`
+- [ ] Обернуть EasyOCR + Tesseract fallback
+- [ ] Заменить прямые `pytesseract` вызовы на новый модуль
 
-    this.gameState.board = cards;
-    this.gameState.street = street;
-    this.gameState.updatedAt = new Date();
+#### 2.1.2 Препроцессинг изображения перед OCR
+```python
+def preprocess_for_ocr(img):
+    img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    thresh = cv2.adaptiveThreshold(gray, 255,
+                                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                    cv2.THRESH_BINARY, 11, 2)
+    denoised = cv2.fastNlMeansDenoising(thresh, h=10)
+    return denoised
+```
+- [ ] Реализовать `preprocess_for_ocr(img)`
+- [ ] Применить ко всем OCR вызовам
 
-    this.emit('boardUpdated', { cards, street });
-  }
+#### 2.1.3 Стабилизация чтения баланса
+- [ ] Читать баланс 3 раза подряд, брать медиану
+- [ ] Валидация: если новое значение отличается от предыдущего в 10x — игнорировать
+- [ ] Несколько ROI зон для баланса (разные PS темы)
 
-  /**
-   * Update hole cards for a player (typically hero)
-   */
-  updateHoleCards(playerIdx: number, cards: Card[]): void {
-    if (!this.gameState) {
-      throw new Error('No active game state');
-    }
-
-    this.gameState.players[playerIdx].holeCards = cards;
-    this.gameState.updatedAt = new Date();
-
-    this.emit('holeCardsUpdated', { playerIdx, cards });
-  }
-
-  /**
-   * Get current game state
-   */
-  getCurrentGame(): GameState | null {
-    return this.gameState;
-  }
-
-  /**
-   * Get action history for a specific player
-   */
-  getPlayerActionHistory(playerIdx: number): Action[] {
-    return this.actionHistory.filter(action => action.playerIdx === playerIdx);
-  }
-
-  /**
-   * Get actions on a specific street
-   */
-  getStreetActions(street: string): Action[] {
-    return this.actionHistory.filter(action => action.street === street);
-  }
-
-  /**
-   * Get all actions in chronological order
-   */
-  getFullHistory(): Action[] {
-    return [...this.actionHistory];
-  }
-
-  /**
-   * End current game
-   */
-  endGame(winner: number, winAmount: number): void {
-    if (!this.gameState) {
-      throw new Error('No active game state');
-    }
-
-    this.gameState.status = 'completed';
-    this.gameState.updatedAt = new Date();
-
-    this.emit('gameEnded', {
-      gameId: this.gameState.id,
-      winner,
-      winAmount,
-    });
-  }
-
-  private getSmallBlindPosition(players: PlayerState[], buttonPosition: Position): number {
-    const positions = ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'MP', 'HJ', 'CO'];
-    const currentIdx = positions.indexOf(buttonPosition);
-    return (currentIdx + 1) % players.length;
-  }
-
-  private generateGameId(): string {
-    return `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private trimHistory(): void {
-    if (this.actionHistory.length > this.maxHistorySize) {
-      this.actionHistory = this.actionHistory.slice(-this.maxHistorySize);
-    }
-  }
-}
+```python
+def read_balance_stable(hwnd, n_reads=3) -> Optional[float]:
+    reads = []
+    for _ in range(n_reads):
+        val = read_balance_once(hwnd)
+        if val and val > 0:
+            reads.append(val)
+        time.sleep(0.1)
+    if not reads:
+        return None
+    reads.sort()
+    return reads[len(reads)//2]  # медиана
 ```
 
-### 6.3 Backend: WebSocket Handler
+### 2.2 Чтение состояния стола (Table State)
 
-```typescript
-// backend/src/server.ts
+**Цель бота на столе — понимать:**
+- Свои карты (2 карты)
+- Карты на борде (0-5 карт)
+- Текущую ставку (to call)
+- Размер банка (pot)
+- Свой стек
+- Доступные кнопки: Fold / Call / Raise / Check / Bet
+- Чей сейчас ход
 
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import { GameStateService } from './services/gameStateService';
-import { EquityEngine } from './engines/equityEngine';
-import { GTOEngine } from './engines/gtoEngine';
+#### 2.2.1 Новый модуль `bridge/vision/table_screen_reader.py`
 
-const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: { origin: '*' },
-  transports: ['websocket', 'polling'],
-});
+- [ ] Захватить скриншот окна стола через HWND
+- [ ] Определить масштаб (разрешение окна vs базовое 1920×1080)
+- [ ] Применить масштабированные ROI зоны
+- [ ] OCR / цвет / template matching для каждой зоны
 
-// Initialize services
-const gameStateService = new GameStateService();
-const equityEngine = new EquityEngine({ method: 'monte-carlo' });
-const gtoEngine = new GTOEngine();
+#### 2.2.2 ROI зоны стола в процентах (не пиксели!)
 
-// Middleware
-app.use(express.json());
+```yaml
+# config/rooms/pokerstars_table.yaml
+hero_cards:
+  x1_pct: 0.40  y1_pct: 0.70  x2_pct: 0.60  y2_pct: 0.90
 
-// WebSocket handlers
-io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`);
+board_cards:
+  x1_pct: 0.30  y1_pct: 0.40  x2_pct: 0.70  y2_pct: 0.58
 
-  socket.on('initGame', (data) => {
-    try {
-      const gameState = gameStateService.initializeGame(
-        data.players,
-        data.buttonPosition,
-        data.smallBlind,
-        data.bigBlind
-      );
+pot_amount:
+  x1_pct: 0.40  y1_pct: 0.35  x2_pct: 0.60  y2_pct: 0.45
 
-      socket.emit('gameInitialized', gameState);
-      socket.broadcast.emit('gameInitialized', gameState);
-    } catch (error) {
-      socket.emit('error', { message: error.message });
-    }
-  });
+btn_fold:
+  x1_pct: 0.25  y1_pct: 0.87  x2_pct: 0.40  y2_pct: 0.96
 
-  socket.on('recordAction', (data) => {
-    try {
-      const action = gameStateService.recordAction(
-        data.playerIdx,
-        data.action,
-        data.amount
-      );
+btn_call:
+  x1_pct: 0.43  y1_pct: 0.87  x2_pct: 0.57  y2_pct: 0.96
 
-      const gameState = gameStateService.getCurrentGame();
-      io.emit('actionRecorded', { action, gameState });
-    } catch (error) {
-      socket.emit('error', { message: error.message });
-    }
-  });
+btn_raise:
+  x1_pct: 0.60  y1_pct: 0.87  x2_pct: 0.75  y2_pct: 0.96
 
-  socket.on('updateBoard', (data) => {
-    try {
-      gameStateService.updateBoard(data.cards, data.street);
+raise_amount_field:
+  x1_pct: 0.60  y1_pct: 0.80  x2_pct: 0.75  y2_pct: 0.87
 
-      const gameState = gameStateService.getCurrentGame();
-      if (gameState) {
-        // Calculate equity for all players
-        const equity = equityEngine.calculateEquity(
-          gameState.players
-            .filter(p => !p.folded && p.holeCards)
-            .map(p => p.holeCards!),
-          gameState.board
-        );
+hero_stack:
+  x1_pct: 0.42  y1_pct: 0.90  x2_pct: 0.58  y2_pct: 0.98
+```
+- [ ] Создать `config/rooms/pokerstars_table.yaml`
+- [ ] Координаты уточнить после калибровки (Фаза 5.1)
 
-        // Get GTO recommendations
-        const recommendations = gtoEngine.getRecommendations(gameState);
+#### 2.2.3 Определение кнопок — два подхода с fallback
 
-        io.emit('boardUpdated', { gameState, equity, recommendations });
-      }
-    } catch (error) {
-      socket.emit('error', { message: error.message });
-    }
-  });
+**Подход A — Template Matching:**
+- [ ] Сохранить шаблоны кнопок Fold/Call/Raise/Check как PNG (32×32 px) в `config/templates/`
+- [ ] `cv2.matchTemplate` на скриншоте стола
 
-  socket.on('disconnect', () => {
-    console.log(`Client disconnected: ${socket.id}`);
-  });
-});
+**Подход B — OCR (fallback):**
+- [ ] Взять нижние 15% высоты окна стола
+- [ ] OCR: найти "Fold"/"Сбросить", "Call"/"Коллировать", "Raise"/"Повысить", "Check"/"Чек"
+- [ ] По тексту определить центр кнопки
 
-// REST API endpoints
-app.get('/api/game/current', (req, res) => {
-  const gameState = gameStateService.getCurrentGame();
-  res.json(gameState || { error: 'No active game' });
-});
+#### 2.2.4 Определение карт — использовать YOLO
 
-app.get('/api/game/history', (req, res) => {
-  const history = gameStateService.getFullHistory();
-  res.json(history);
-});
+- [ ] Использовать YOLOv8 модель из `Playing Cards.v4-...` (уже есть в проекте)
+- [ ] Запускать YOLO на ROI зоне карт героя и борда
+- [ ] Конвертировать YOLO label → карта (`Ac`, `Kh`, `2d`, etc.)
 
-// Start server
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+#### 2.2.5 Определение "чей ход"
+
+- [ ] Детект таймера в зоне героя (HSV поиск желтого/оранжевого)
+- [ ] Проверить активность кнопок (серые/disabled = не наш ход)
+- [ ] OCR поиск "Your Turn" / подсветки
+
+#### 2.2.6 Датакласс TableState
+```python
+@dataclass
+class TableState:
+    hero_cards: List[str]        # ['Ac', 'Kh']
+    board_cards: List[str]       # ['2d', '7s', 'Jc']
+    pot: float                   # 150.0
+    to_call: float               # 50.0 (0 если чек)
+    hero_stack: float            # 980.0
+    available_actions: List[str] # ['fold', 'call', 'raise']
+    is_my_turn: bool
+    hand_ended: bool
+    street: str                  # 'preflop'/'flop'/'turn'/'river'
+```
+- [ ] Создать в `sim_engine/state/table_state.py` (расширить существующий)
+
+---
+
+## ФАЗА 3 — ЧЕЛОВЕКОПОДОБНОЕ ВЗАИМОДЕЙСТВИЕ
+*(~1 день)*
+
+### 3.1 Движение мыши по кривым Безье
+
+#### 3.1.1 Новый модуль `bridge/action/human_mouse.py`
+```python
+def bezier_path(start, end, n_points=50):
+    """Генерирует путь по кривой Безье с случайными контрольными точками"""
+    cp1 = (
+        start[0] + (end[0]-start[0])*0.33 + random.randint(-30, 30),
+        start[1] + (end[1]-start[1])*0.33 + random.randint(-30, 30)
+    )
+    cp2 = (
+        start[0] + (end[0]-start[0])*0.66 + random.randint(-30, 30),
+        start[1] + (end[1]-start[1])*0.66 + random.randint(-30, 30)
+    )
+    # Вычислить точки кривой...
+
+def human_move_and_click(x, y, click=True):
+    """Движение по Безье с easing + случайное смещение от точки клика"""
+    # Easing: медленно в начале и конце, быстро в середине
+    # Смещение клика: random.randint(-3, 3) по обоим осям
+    # Удержание кнопки: random.uniform(0.08, 0.25) секунды
+```
+- [ ] Реализовать `bezier_path(start, end, n_points)`
+- [ ] Реализовать `human_move_and_click(x, y, click=True)`
+- [ ] Заменить все `pyautogui.moveTo` + `pyautogui.click` на новую функцию
+
+### 3.2 Задержки принятия решений
+
+#### 3.2.1 Функция задержки по типу действия
+```python
+def get_action_delay(action, hand_strength=0.5, is_bluff=False) -> float:
+    base = {
+        'fold':  random.uniform(1.0, 3.0),  # быстро
+        'check': random.uniform(0.5, 2.0),  # быстро
+        'call':  random.uniform(1.5, 4.0),  # думаем
+        'bet':   random.uniform(2.0, 6.0),  # думаем
+        'raise': random.uniform(2.5, 8.0),  # долго думаем
+    }.get(action, 2.0)
+    
+    if is_bluff:
+        base *= random.uniform(1.2, 1.8)
+    
+    if hand_strength > 0.85 and random.random() < 0.3:
+        base *= random.uniform(1.5, 2.5)  # slowplay
+    
+    if random.random() < 0.05:  # 5% — отвлёкся
+        base += random.uniform(5, 15)
+    
+    return base
+```
+- [ ] Реализовать `get_action_delay()` в `bridge/timing/human_timing.py`
+- [ ] Интегрировать в `_execute_action()` в `bot_instance.py`
+
+### 3.3 MouseGuard — восстановить
+- [ ] `pip install pynput`
+- [ ] `launcher/mouse_guard.py` уже написан — просто работает после установки
+
+### 3.4 Ввод суммы ставки
+- [ ] Тройной клик для выделения всего текста в поле
+- [ ] Ctrl+A для надёжности
+- [ ] Посимвольный ввод с задержками `random.uniform(0.05, 0.15)` между символами
+
+---
+
+## ФАЗА 4 — ПОЛНЫЙ ЦИКЛ ИГРЫ
+*(~1-2 дня)*
+
+### 4.1 Расширенная машина состояний BotInstance
+
+**Текущие состояния:** `IDLE → SEARCHING → SEATED → PLAYING`
+
+**Нужно:**
+```
+IDLE
+ ↓
+SCANNING_LOBBY       ← сканируем лобби, ищем стол
+ ↓
+CLICKING_TABLE       ← кликнули по строке стола
+ ↓
+WAITING_BUYIN        ← ждём диалог buy-in (таймаут 15с)
+ ↓
+HANDLING_BUYIN       ← заполняем и подтверждаем buy-in
+ ↓
+WAITING_TABLE        ← ждём открытия окна стола (таймаут 30с)
+ ↓
+SEATED               ← нашли окно стола, распарсили начальное состояние
+ ↓
+WAITING_TURN         ← не наш ход, мониторим стол
+ ↓
+MY_TURN              ← наш ход, принимаем решение
+ ↓
+ACTING               ← выполняем действие (клик)
+ ↓
+WAITING_RESULT       ← ждём обновления стола
 ```
 
-### 6.4 Frontend: Overlay Component
+- [ ] Добавить новые состояния в `BotState` enum
+- [ ] Реализовать переходы между состояниями
+- [ ] Таймаут при застревании > N секунд → возврат в IDLE
+- [ ] Логировать каждый переход с временем
 
-```typescript
-// frontend/src/components/Overlay/Overlay.tsx
+### 4.2 Game Loop
 
-import React, { useEffect, useState } from 'react';
-import { useGameState } from '../../hooks/useGameState';
-import { useWebSocket } from '../../hooks/useWebSocket';
-import { TableView } from '../TableView/TableView';
-import { StatisticsPanel } from '../StatisticsPanel/StatisticsPanel';
-import { StrategyPanel } from '../StrategyPanel/StrategyPanel';
-import { SettingsPanel } from '../SettingsPanel/SettingsPanel';
-import styles from './Overlay.module.css';
-
-export const Overlay: React.FC = () => {
-  const { gameState, updateGameState } = useGameState();
-  const { socket, isConnected } = useWebSocket();
-  const [showSettings, setShowSettings] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'stats' | 'strategy' | 'settings'>('stats');
-
-  useEffect(() => {
-    if (!socket) return;
-
-    socket.on('boardUpdated', (data) => {
-      updateGameState(data.gameState);
-    });
-
-    socket.on('actionRecorded', (data) => {
-      updateGameState(data.gameState);
-    });
-
-    socket.on('error', (data) => {
-      console.error('Socket error:', data.message);
-    });
-
-    return () => {
-      socket.off('boardUpdated');
-      socket.off('actionRecorded');
-      socket.off('error');
-    };
-  }, [socket]);
-
-  if (!isConnected) {
-    return (
-      <div className={styles.connectionError}>
-        <p>Connecting to server...</p>
-      </div>
-    );
-  }
-
-  if (!gameState) {
-    return (
-      <div className={styles.placeholder}>
-        <p>Waiting for game data...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.overlay}>
-      <div className={styles.container}>
-        {/* Main Table View */}
-        <div className={styles.mainPanel}>
-          <TableView gameState={gameState} />
-        </div>
-
-        {/* Side Panels */}
-        <div className={styles.sidePanels}>
-          <div className={styles.tabButtons}>
-            <button
-              className={`${styles.tabBtn} ${selectedTab === 'stats' ? styles.active : ''}`}
-              onClick={() => setSelectedTab('stats')}
-            >
-              Stats
-            </button>
-            <button
-              className={`${styles.tabBtn} ${selectedTab === 'strategy' ? styles.active : ''}`}
-              onClick={() => setSelectedTab('strategy')}
-            >
-              Strategy
-            </button>
-            <button
-              className={`${styles.tabBtn} ${selectedTab === 'settings' ? styles.active : ''}`}
-              onClick={() => setSelectedTab('settings')}
-            >
-              ⚙️
-            </button>
-          </div>
-
-          {selectedTab === 'stats' && <StatisticsPanel gameState={gameState} />}
-          {selectedTab === 'strategy' && <StrategyPanel gameState={gameState} />}
-          {selectedTab === 'settings' && <SettingsPanel />}
-        </div>
-      </div>
-    </div>
-  );
-};
+#### 4.2.1 `_wait_for_my_turn(max_wait=60) -> bool`
+```python
+def _wait_for_my_turn(self, max_wait=60) -> bool:
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        state = self._read_table_state()
+        if state.is_my_turn:
+            return True
+        if state.hand_ended:
+            return False
+        time.sleep(0.3)
+    return False
 ```
+- [ ] Реализовать в `BotInstance`
 
-### 6.5 Frontend: Custom Hook for Game State
+#### 4.2.2 `_read_table_state() -> TableState`
+- [ ] Захватить скриншот `self.table_hwnd`
+- [ ] Применить `TableScreenReader`
+- [ ] Вернуть заполненный `TableState`
 
-```typescript
-// frontend/src/hooks/useGameState.ts
+#### 4.2.3 `_decide_action(state: TableState) -> Action`
+- [ ] Интеграция с `PokerAI.decide()`
+- [ ] Передавать: карты, борд, пот, to_call, стек, позицию
 
-import { useState, useCallback } from 'react';
-import { GameState } from '../types/game';
+#### 4.2.4 `_execute_action(action, amount=None)`
+- [ ] Задержка `get_action_delay(action, ...)`
+- [ ] Найти координату кнопки через `_find_button(action)`
+- [ ] Если raise + amount → сначала `enter_raise_amount()`
+- [ ] `human_move_and_click(*btn_pos)`
+- [ ] Логировать действие
 
-interface GameStateContextType {
-  gameState: GameState | null;
-  updateGameState: (newState: Partial<GameState>) => void;
-  clearGameState: () => void;
-}
+### 4.3 Обработка нестандартных ситуаций
 
-export const useGameState = (): GameStateContextType => {
-  const [gameState, setGameState] = useState<GameState | null>(null);
+#### 4.3.1 Попапы во время игры
+- [ ] Обнаружение дочерних окон с нежелательными диалогами
+- [ ] Авто-закрытие: реклама, предложение добавить фишки, ошибки соединения
+- [ ] При ошибке соединения → пауза + попытка восстановления
 
-  const updateGameState = useCallback((newState: Partial<GameState>) => {
-    setGameState(prev => (prev ? { ...prev, ...newState } : null));
-  }, []);
+#### 4.3.2 Потеря окна стола
+- [ ] Проверять `win32gui.IsWindow(self.table_hwnd)` каждый тик
+- [ ] При потере → сохранить debug скриншот → вернуться в `SCANNING_LOBBY`
 
-  const clearGameState = useCallback(() => {
-    setGameState(null);
-  }, []);
+#### 4.3.3 Исправить AttributeError `current_hand_action_count`
+- [ ] Добавить `self.current_hand_action_count = 0` в `__init__`
+- [ ] Сбрасывать в 0 при начале новой руки
 
-  return { gameState, updateGameState, clearGameState };
-};
+---
+
+## ФАЗА 5 — КАЛИБРОВКА И ОБУЧЕНИЕ
+*(по необходимости)*
+
+### 5.1 Инструмент калибровки ROI `tools/roi_calibrator.py`
+
+- [ ] GUI инструмент на tkinter или PyQt6
+- [ ] Захватывает скриншот нужного окна PS
+- [ ] Пользователь рисует прямоугольники вокруг элементов
+- [ ] Инструмент сохраняет координаты как проценты в YAML
+- [ ] Элементы для калибровки:
+  - Лобби: balance, nickname, table rows area
+  - Стол: hero cards, board cards, pot, fold/call/raise buttons, raise amount field, hero stack
+
+**Действие пользователя: ~20-30 минут**
+
+### 5.2 Сбор датасета для обучения (если YOLO плохо работает)
+
+- [ ] Запустить PS, раздать карты
+- [ ] Сохранять скриншоты зон карт (автоматически через debug mode)
+- [ ] Разметить в LabelImg (~200-300 примеров)
+- [ ] Дообучить YOLOv8n на новых данных (`yolo train model=yolov8n.pt`)
+
+### 5.3 Шаблоны для template matching кнопок
+
+- [ ] Собрать 50+ скриншотов кнопок Fold/Call/Raise в разных состояниях
+- [ ] Сохранить шаблоны в `config/templates/buttons/`
+- [ ] Протестировать `cv2.matchTemplate` с `TM_CCOEFF_NORMED` порогом 0.8
+
+### 5.4 Обучение классификатора состояния стола (опционально)
+
+- [ ] YOLOv8 классификатор для: наличие карт у героя, улица (preflop/flop/turn/river), активен ли таймер
+- [ ] ~100-200 скриншотов на класс
+
+---
+
+## ФАЗА 6 — ТЕСТИРОВАНИЕ И СТАБИЛИЗАЦИЯ
+*(непрерывно)*
+
+### 6.1 Пошаговый тест-план
+
+- [ ] **Тест 0:** Запустить `tools/spy_windows.py` при открытом диалоге buy-in
+- [ ] **Тест 1:** `WindowTracker` видит все окна PS с правильным типом
+- [ ] **Тест 2:** Диалог buy-in находится и заполняется автоматически
+- [ ] **Тест 3:** После buy-in находится окно стола
+- [ ] **Тест 4:** На открытом столе читаются карты и кнопки
+- [ ] **Тест 5:** Определяется когда ход нашего бота
+- [ ] **Тест 6:** Кнопки кликаются правильно
+- [ ] **Тест 7:** Полный цикл: лобби → стол → buy-in → сел → сыграл руку
+
+### 6.2 Расширенное логирование
+
+- [ ] Логировать каждое состояние машины состояний с временем
+- [ ] Сохранять скриншот при каждой смене состояния (в debug режиме)
+- [ ] В `session_log.py` добавить:
+  - Время в каждом состоянии
+  - Причина перехода
+  - Количество ошибок per-состояние
+
+---
+
+## ЧТО НУЖНО ОТ ПОЛЬЗОВАТЕЛЯ
+
+### Приоритет 1 — ПРЯМО СЕЙЧАС (5 минут):
+1. Запустить PS, открыть лобби
+2. Кликнуть вручную на любой стол → появится диалог buy-in
+3. **НЕ ЗАКРЫВАТЬ диалог**
+4. В консоли запустить:
+```powershell
+cd C:\proekt-i\Tg_Pkr_Bot
+.venv\Scripts\python.exe -c "
+import win32gui
+def cb(h, r):
+    if win32gui.IsWindowVisible(h):
+        print(h, repr(win32gui.GetWindowText(h)), win32gui.GetClassName(h), win32gui.GetWindowRect(h))
+win32gui.EnumWindows(cb, None)
+"
 ```
+5. Прислать вывод → сразу починим buy-in диалог
 
-### 6.6 Shared Types
+### Приоритет 2 — Калибровка ROI (20-30 минут):
+- После создания `tools/roi_calibrator.py` — потыкать мышкой на скриншоте
+- Все координаты кнопок и зон будут точными
 
-```typescript
-// shared/src/types/poker.ts
-
-export type Card = `${Rank}${Suit}`;
-export type Rank = 'A' | 'K' | 'Q' | 'J' | 'T' | '9' | '8' | '7' | '6' | '5' | '4' | '3' | '2';
-export type Suit = 's' | 'h' | 'd' | 'c'; // spades, hearts, diamonds, clubs
-
-export type Position = 'BTN' | 'SB' | 'BB' | 'UTG' | 'UTG+1' | 'MP' | 'HJ' | 'CO';
-
-export interface Hand {
-  card1: Card;
-  card2: Card;
-}
-
-export interface Equity {
-  equity: number; // 0-1
-  confidence: number; // 0-1
-  wins: number;
-  ties: number;
-  losses: number;
-}
-
-export interface Range {
-  [hand: string]: number; // hand -> percentage weight
-}
-
-export interface HandStrength {
-  hand: Hand;
-  strength: number; // 0-1 (strength ranking)
-  rank: string; // e.g., "pair of aces"
-}
-```
+### Приоритет 3 — Скриншоты (по желанию):
+- Скриншоты стола PS во время раздачи (карты видны, кнопки активны)
+- Улучшит OCR и template matching
 
 ---
 
-## 7. Performance Targets
+## ПОРЯДОК РЕАЛИЗАЦИИ
 
-| Metric | Target | Priority |
-|--------|--------|----------|
-| Equity calculation latency | <100ms (100k iterations) | High |
-| WebSocket message latency | <50ms | High |
-| Frontend render time | <16.67ms (60 FPS) | High |
-| Board state update | <200ms end-to-end | Medium |
-| GTO recommendation lookup | <50ms | Medium |
-| Memory usage (backend) | <500MB average | Medium |
-| Memory usage (frontend) | <100MB | Low |
+| # | Задача | Зависит от | Время |
+|---|--------|-----------|-------|
+| 1 | Диагностика buy-in диалога | Пользователя (5 мин) | 10 мин |
+| 2 | Починить `handle_buyin_dialog` | #1 | 2 часа |
+| 3 | `WindowTracker` | — | 3 часа |
+| 4 | OCR → EasyOCR + препроцессинг | — | 2 часа |
+| 5 | `tools/roi_calibrator.py` | — | 3 часа |
+| 6 | Калибровка ROI | Пользователя (20 мин) | 20 мин |
+| 7 | `TableScreenReader` | #5, #6 | 4 часа |
+| 8 | Bezier движение мыши | — | 2 часа |
+| 9 | Расширенная машина состояний | #2, #3, #7 | 4 часа |
+| 10 | `_wait_for_my_turn` + Game Loop | #7, #9 | 3 часа |
+| 11 | `_decide_action` → PokerAI интеграция | #10 | 2 часа |
+| 12 | Попапы + потеря окна | #9 | 2 часа |
+| 13 | Полный тест цикла | #12 | 1 день |
 
----
-
-## 8. Security Considerations
-
-1. **Input Validation**: All inputs validated on both frontend and backend
-2. **Rate Limiting**: Implement rate limiting on WebSocket connections
-3. **Authentication**: JWT-based authentication for protected endpoints
-4. **HTTPS/WSS**: Encrypt all communications in production
-5. **Data Sanitization**: All user inputs sanitized before processing
-6. **Error Handling**: Don't expose sensitive information in error messages
-7. **CORS**: Properly configured CORS headers
+**Итого:** ~3-4 дня разработки + ~1 час участия пользователя
 
 ---
 
-## 9. Testing Strategy
+## БЫСТРЫЕ ИСПРАВЛЕНИЯ (можно сделать сейчас)
 
-### Unit Tests
-- Equity calculator precision and performance
-- Card utility functions
-- Hand evaluation
-- Position calculations
+Эти баги не требуют информации от пользователя и мешают работе:
 
-### Integration Tests
-- WebSocket communication
-- Game state management
-- Database operations
-- API endpoints
-
-### E2E Tests
-- Full game flow
-- Overlay UI interactions
-- Settings persistence
-- Real-time updates
-
-### Performance Tests
-- Equity calculation benchmarks
-- WebSocket throughput
-- Memory usage profiles
-- Frontend rendering performance
+- [ ] `AttributeError: current_hand_action_count` — добавить в `__init__`
+- [ ] `accounts.json` не сохраняется — починить `BotAccountBinder.save()`
+- [ ] `pynput` не установлен — добавить в `requirements.txt`
+- [ ] `StateBridge` fallback в симуляцию — найти и починить импорт-проблему
+- [ ] `_seated_since` не в `__init__` — перенести
 
 ---
 
-## 10. Deployment Strategy
-
-### Development
-```bash
-docker-compose up -d
-```
-
-### Staging
-- Deploy to staging environment
-- Run full test suite
-- Performance benchmarking
-- Security scanning
-
-### Production
-- Docker multi-stage builds
-- Health checks and monitoring
-- Horizontal scaling ready
-- Database backups
-- CDN for static assets
-
----
-
-## 11. Future Enhancements (Post v1.0)
-
-1. **Machine Learning Integration**
-   - Opponent pattern prediction
-   - Hand range inference
-   - Exploitative adaptation
-
-2. **Advanced Solvers**
-   - Pokersolver integration
-   - Custom GTO tables
-   - Position-specific solvers
-
-3. **Mobile Support**
-   - Responsive overlay
-   - Mobile-friendly UI
-   - Mobile app (native)
-
-4. **Multi-Format Support**
-   - Cash game optimization
-   - Tournament-specific features
-   - SNGs and spins
-
-5. **Live Integration**
-   - PokerStars API integration
-   - Twitch chat integration
-   - Real-time viewer sync
-
-6. **Analytics Dashboard**
-   - Game statistics
-   - Win rate tracking
-   - ROI calculations
-   - Downswing analysis
-
----
-
-## 12. Getting Started
-
-See [SETUP.md](./docs/SETUP.md) for detailed setup instructions.
-
-### Quick Start
-```bash
-# Clone repository
-git clone https://github.com/sunnuls/TPb.git
-cd TPb
-
-# Install dependencies
-npm install
-
-# Start development environment
-docker-compose up -d
-
-# Start backend
-cd backend && npm start
-
-# Start frontend (in new terminal)
-cd frontend && npm run dev
-```
-
----
-
-## 13. Contributing
-
-See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for contribution guidelines.
-
----
-
-## 14. License
-
-MIT License - See LICENSE file for details
-
----
-
-## 15. Support & Feedback
-
-- **Issues**: Report bugs on GitHub Issues
-- **Discussions**: Share ideas in GitHub Discussions
-- **Email**: support@tpb.dev (future)
-
----
-
-**Last Updated:** 2026-01-14  
-**Maintained by:** @sunnuls
+*Роудмап создан на основе анализа всего кода проекта: 103 файла в launcher/, 57 файлов в bridge/, 40 файлов в sim_engine/, 17 файлов в hive/*

@@ -1,0 +1,333 @@
+# CoinPoker Room Configuration
+# Base resolution: 1920x1080
+# EDUCATIONAL USE ONLY
+
+room_name: "coinpoker"
+resolution: "1920x1080"
+
+# Process / window identifiers for auto-detection
+process_names:
+  - "CoinPoker"
+  - "CoinPoker.exe"
+window_title_keywords:
+  - "CoinPoker"
+  - "Coin Poker"
+  - "Hold'em"
+  - "Omaha"
+
+# ── Table ROI Definitions ───────────────────────────────────────────────────
+rois:
+  # Hero hole cards (bottom-center, slightly left of center)
+  hero_card_1:
+    x: 840
+    y: 840
+    width: 72
+    height: 100
+
+  hero_card_2:
+    x: 930
+    y: 840
+    width: 72
+    height: 100
+
+  # Community cards (center of table)
+  board_card_1:
+    x: 680
+    y: 440
+    width: 68
+    height: 92
+
+  board_card_2:
+    x: 762
+    y: 440
+    width: 68
+    height: 92
+
+  board_card_3:
+    x: 844
+    y: 440
+    width: 68
+    height: 92
+
+  board_card_4:
+    x: 926
+    y: 440
+    width: 68
+    height: 92
+
+  board_card_5:
+    x: 1008
+    y: 440
+    width: 68
+    height: 92
+
+  # Pot display (center top of table)
+  pot:
+    x: 830
+    y: 340
+    width: 220
+    height: 38
+
+  # Hero stack (bottom row, under hero cards)
+  hero_stack:
+    x: 820
+    y: 950
+    width: 160
+    height: 28
+
+  # Villain stacks — 4-max positions
+  villain_1_stack:    # Left seat
+    x: 280
+    y: 580
+    width: 130
+    height: 28
+
+  villain_2_stack:    # Top seat
+    x: 820
+    y: 110
+    width: 130
+    height: 28
+
+  villain_3_stack:    # Right seat
+    x: 1420
+    y: 580
+    width: 130
+    height: 28
+
+  # Action buttons (bottom strip)
+  fold_button:
+    x: 720
+    y: 995
+    width: 110
+    height: 42
+
+  check_button:
+    x: 850
+    y: 995
+    width: 110
+    height: 42
+
+  call_button:
+    x: 850
+    y: 995
+    width: 110
+    height: 42
+
+  raise_button:
+    x: 980
+    y: 995
+    width: 110
+    height: 42
+
+  allin_button:
+    x: 1110
+    y: 995
+    width: 110
+    height: 42
+
+  # Bet/raise amount input field
+  bet_amount_field:
+    x: 980
+    y: 958
+    width: 110
+    height: 30
+
+  # Dealer button indicator
+  dealer_button:
+    x: 0
+    y: 0
+    width: 30
+    height: 30
+
+  # Timer bar (action clock)
+  timer_bar:
+    x: 720
+    y: 980
+    width: 480
+    height: 8
+
+  # Turn indicator (highlight around active player)
+  turn_indicator:
+    x: 720
+    y: 960
+    width: 480
+    height: 50
+
+# ── Lobby ROI Definitions ───────────────────────────────────────────────────
+lobby:
+  # Main lobby table list area
+  table_list:
+    x: 20
+    y: 120
+    width: 1200
+    height: 800
+
+  # Game type tabs (NL Hold'em, PLO, etc.)
+  game_tabs:
+    x: 0
+    y: 60
+    width: 800
+    height: 50
+
+  # Stakes filter dropdown
+  stakes_filter:
+    x: 820
+    y: 65
+    width: 200
+    height: 38
+
+  # Player count filter
+  players_filter:
+    x: 1040
+    y: 65
+    width: 160
+    height: 38
+
+  # Lobby header row (for column alignment)
+  header_row:
+    x: 20
+    y: 115
+    width: 1200
+    height: 30
+
+  # Scroll area for table list
+  scroll_area:
+    x: 20
+    y: 120
+    width: 1200
+    height: 800
+
+# ── Popup Window Definitions ─────────────────────────────────────────────────
+# These popups appear between lobby click and table window opening.
+popups:
+  # "Select stake" dialog — sometimes shown before joining
+  stake_selection:
+    trigger_keywords:
+      - "Select stake"
+      - "Buy-in"
+      - "Buyin"
+      - "Choose buy"
+    confirm_button_text:
+      - "OK"
+      - "Join"
+      - "Confirm"
+      - "Play"
+    confirm_button_roi:
+      x: 750
+      y: 450
+      width: 420
+      height: 60
+
+  # "Sit down" / seat selection overlay
+  seat_selection:
+    trigger_keywords:
+      - "Choose seat"
+      - "Select seat"
+      - "Seat"
+    confirm_button_text:
+      - "Sit"
+      - "Sit Down"
+      - "Join"
+    confirm_button_roi:
+      x: 750
+      y: 500
+      width: 420
+      height: 60
+
+  # "Table is full" notification
+  table_full:
+    trigger_keywords:
+      - "Table is full"
+      - "No seats available"
+    close_button_roi:
+      x: 880
+      y: 420
+      width: 160
+      height: 44
+
+  # Generic "OK" dialog
+  generic_ok:
+    confirm_button_roi:
+      x: 840
+      y: 460
+      width: 240
+      height: 48
+
+# ── Visual Characteristics ───────────────────────────────────────────────────
+colors:
+  table_felt: [20, 90, 40]       # CoinPoker green felt (RGB)
+  card_back: [180, 30, 30]       # Red card backs
+  button_active: [230, 180, 20]  # Yellow active button
+  button_inactive: [80, 80, 90]
+  highlight_active_player: [255, 200, 0]
+  lobby_row_selected: [50, 80, 160]
+
+# ── OCR Settings ─────────────────────────────────────────────────────────────
+ocr:
+  pot_prefix: "Pot:"
+  bet_prefix: ""
+  stack_suffix: ""
+  decimal_separator: "."
+  thousands_separator: ","
+  # CoinPoker uses USDT/crypto — amounts can be decimal
+  currency_symbol: ""
+
+# ── Card Recognition ─────────────────────────────────────────────────────────
+cards:
+  rank_height: 22
+  suit_height: 16
+  rank_y_offset: 8
+  suit_y_offset: 36
+  # Card ranks to detect
+  ranks:
+    - "A"
+    - "K"
+    - "Q"
+    - "J"
+    - "T"
+    - "9"
+    - "8"
+    - "7"
+    - "6"
+    - "5"
+    - "4"
+    - "3"
+    - "2"
+  suits:
+    - "s"   # spades
+    - "h"   # hearts
+    - "d"   # diamonds
+    - "c"   # clubs
+
+# ── Table Window Detection ────────────────────────────────────────────────────
+table_window:
+  # Keywords that indicate this is a table window (not lobby)
+  title_keywords:
+    - "Hold'em"
+    - "Omaha"
+    - "NL"
+    - "PLO"
+    - "Table"
+  # Minimum window size to be considered a table
+  min_width: 640
+  min_height: 480
+
+# ── Metadata ─────────────────────────────────────────────────────────────────
+metadata:
+  table_type_indicator:
+    x: 80
+    y: 45
+    width: 200
+    height: 28
+
+  street_indicator:
+    x: 820
+    y: 390
+    width: 220
+    height: 30
+
+  player_count:
+    x: 1600
+    y: 20
+    width: 120
+    height: 25

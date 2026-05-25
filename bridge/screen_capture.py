@@ -1,35 +1,36 @@
 """
-Screen Capture Module for HCI Research (Roadmap3 Phase 1 + bot_fixes Phase 3).
+Screen Capture Module for HCI Research.
 
-EDUCATIONAL USE ONLY: This module captures screenshots of external desktop
-applications for Human-Computer Interaction research purposes.
+Extended:
+  - roadmap11 Phase 1 — auto_find_window() by title/process.
+  - roadmap13 Phase 2 — visual logo search via cv2.matchTemplate.
 
 DRY-RUN MODE: All capture operations are simulated by default.
 Real window capture requires --unsafe flag.
-
-Phase 3 enhancements (bot_fixes.md):
-  - Full Win32 capture via PrintWindow / BitBlt (not just mss)
-  - Real ``find_window_win32`` via ``AutoWindowFinder``
-  - ``capture_client_area``: crops title-bar / borders automatically
-  - ``capture_full_window``: full window including decorations
-  - ``auto_crop_borders``: removes black / empty edges
-  - ``capture_by_binding``: integrates with ``BotAccountBinder``
 
 WARNING: This is a research prototype. Real-world use is PROHIBITED.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 # Import safety framework
 from bridge.safety import get_safety, require_unsafe
+
+# DXGICapturer: Desktop Duplication API (bypasses SetWindowDisplayAffinity)
+try:
+    import dxcam
+    DXCAM_AVAILABLE = True
+except (ImportError, ModuleNotFoundError, Exception):
+    DXCAM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -752,6 +753,346 @@ class ScreenCapture:
 
         return ScreenCapture.auto_crop_borders(image)
 
+    # ------------------------------------------------------------------
+    # roadmap11_auto_roi_detection.md Phase 1 — auto_find_window
+    # ------------------------------------------------------------------
+
+    # Default keywords to search for poker-client windows
+    POKER_TITLE_KEYWORDS: List[str] = [
+        "CoinPoker", "PokerStars", "PartyPoker", "888poker",
+        "GGPoker", "Ignition", "WPN", "Poker",
+        "Table", "Hold'em", "Holdem", "NL", "PLO",
+    ]
+
+    POKER_PROCESS_NAMES: List[str] = [
+        "CoinPoker", "PokerStars", "888poker",
+        "GGPoker", "PartyPoker", "Ignition",
+    ]
+
+    ACTIVE_WINDOW_CONFIG = Path("config/active_window.json")
+
+    def auto_find_window(
+        self,
+        keywords: Optional[List[str]] = None,
+        process_names: Optional[List[str]] = None,
+        *,
+        save_config: bool = True,
+    ) -> Optional[int]:
+        """Automatically find a poker-client window by title or process.
+
+        Searches visible windows for titles matching any of the given
+        *keywords* (case-insensitive substring).  Falls back to process
+        name matching.  The first match is persisted to
+        ``config/active_window.json`` so subsequent launches reuse it.
+
+        Args:
+            keywords:      Title substrings to search for.
+                           Defaults to :data:`POKER_TITLE_KEYWORDS`.
+            process_names: Process names to match.
+                           Defaults to :data:`POKER_PROCESS_NAMES`.
+            save_config:   Whether to write the result to JSON.
+
+        Returns:
+            HWND (int) of the found window, or ``None``.
+        """
+        keywords = keywords or self.POKER_TITLE_KEYWORDS
+        process_names = process_names or self.POKER_PROCESS_NAMES
+
+        hwnd: Optional[int] = None
+        info: Optional[WindowInfo] = None
+
+        # Strategy 1: AutoWindowFinder (best — scores by title/class/process)
+        if FINDER_AVAILABLE and WIN32_AVAILABLE:
+            hwnd, info = self._auto_find_via_finder(keywords, process_names)
+
+        # Strategy 2: plain Win32 EnumWindows title scan
+        if hwnd is None and WIN32_AVAILABLE:
+            hwnd, info = self._auto_find_via_enum(keywords)
+
+        # Strategy 3: visual logo search (template matching on screen)
+        if hwnd is None and CV2_AVAILABLE and MSS_AVAILABLE:
+            hwnd, info = self._auto_find_via_logo()
+
+        if hwnd is None:
+            logger.warning("auto_find_window: no poker window found")
+            return None
+
+        # Update internal state
+        self.current_window = info
+        logger.info(
+            "auto_find_window: found '%s' hwnd=%d (%dx%d)",
+            info.title if info else "?", hwnd,
+            info.width if info else 0, info.height if info else 0,
+        )
+
+        # Persist
+        if save_config:
+            self._save_active_window(hwnd, info)
+
+        return hwnd
+
+    # -- helpers -----------------------------------------------------------
+
+    def _auto_find_via_finder(
+        self,
+        keywords: List[str],
+        process_names: List[str],
+    ) -> Tuple[Optional[int], Optional[WindowInfo]]:
+        """Search using AutoWindowFinder (multi-strategy, scored)."""
+        if not FINDER_AVAILABLE:
+            return None, None
+
+        finder = AutoWindowFinder()
+        if not finder.available:
+            return None, None
+
+        # Try each keyword as a regex-safe substring
+        for kw in keywords:
+            try:
+                match = finder.find(kw)
+            except Exception:
+                continue
+
+            if match and match.hwnd and match.visible:
+                wi = WindowInfo(
+                    hwnd=match.hwnd,
+                    title=match.title,
+                    process_name=match.process_name,
+                    x=match.full_rect.x,
+                    y=match.full_rect.y,
+                    width=match.full_rect.w,
+                    height=match.full_rect.h,
+                    is_visible=True,
+                )
+                return match.hwnd, wi
+
+        # Try process names
+        for proc in process_names:
+            try:
+                match = finder.find("", by_process=proc)
+            except Exception:
+                continue
+
+            if match and match.hwnd and match.visible:
+                wi = WindowInfo(
+                    hwnd=match.hwnd,
+                    title=match.title,
+                    process_name=match.process_name,
+                    x=match.full_rect.x,
+                    y=match.full_rect.y,
+                    width=match.full_rect.w,
+                    height=match.full_rect.h,
+                    is_visible=True,
+                )
+                return match.hwnd, wi
+
+        return None, None
+
+    def _auto_find_via_enum(
+        self,
+        keywords: List[str],
+    ) -> Tuple[Optional[int], Optional[WindowInfo]]:
+        """Fallback: plain win32gui.EnumWindows title search."""
+        if not WIN32_AVAILABLE:
+            return None, None
+
+        results: List[Tuple[int, str]] = []
+
+        def _enum_cb(hwnd: int, _: Any) -> None:
+            if not win32gui.IsWindowVisible(hwnd):
+                return
+            title = win32gui.GetWindowText(hwnd)
+            if not title:
+                return
+            title_lower = title.lower()
+            for kw in keywords:
+                if kw.lower() in title_lower:
+                    results.append((hwnd, title))
+                    break
+
+        try:
+            win32gui.EnumWindows(_enum_cb, None)
+        except Exception as exc:
+            logger.error("EnumWindows failed: %s", exc)
+            return None, None
+
+        if not results:
+            return None, None
+
+        hwnd, title = results[0]
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            w, h = right - left, bottom - top
+        except Exception:
+            w, h = 0, 0
+
+        wi = WindowInfo(
+            hwnd=hwnd, title=title, process_name="",
+            x=left if w else 0, y=top if h else 0,
+            width=w, height=h, is_visible=True,
+        )
+        return hwnd, wi
+
+    # -- Visual logo search (roadmap13 Phase 2) --
+
+    LOGO_TEMPLATE_PATH = Path("templates/anchors/logo_coinpoker.png")
+    LOGO_MATCH_THRESHOLD = 0.55
+
+    def _auto_find_via_logo(
+        self,
+    ) -> Tuple[Optional[int], Optional[WindowInfo]]:
+        """Strategy 3: capture whole screen and find logo template.
+
+        Takes a full-screen screenshot, runs multi-scale template matching
+        with the logo anchor, and if a hit is found locates which window
+        contains that pixel position.
+        """
+        if not CV2_AVAILABLE or not MSS_AVAILABLE:
+            return None, None
+
+        # Load logo template
+        logo_path = self.LOGO_TEMPLATE_PATH
+        if not logo_path.exists():
+            logger.debug("_auto_find_via_logo: logo template not found")
+            return None, None
+
+        logo = cv2.imread(str(logo_path), cv2.IMREAD_GRAYSCALE)
+        if logo is None:
+            return None, None
+
+        # Capture full screen
+        try:
+            with mss.mss() as sct:
+                monitor = sct.monitors[0]  # entire virtual screen
+                grab = sct.grab(monitor)
+                screen = np.array(grab)[:, :, :3]
+                screen_gray = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
+        except Exception as exc:
+            logger.debug("_auto_find_via_logo: screen grab failed: %s", exc)
+            return None, None
+
+        # Multi-scale template matching
+        best_val = 0.0
+        best_loc = (0, 0)
+        scales = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5]
+        lh, lw = logo.shape[:2]
+
+        for scale in scales:
+            new_w = max(4, int(lw * scale))
+            new_h = max(4, int(lh * scale))
+            if new_w >= screen_gray.shape[1] or new_h >= screen_gray.shape[0]:
+                continue
+            resized = cv2.resize(logo, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            result = cv2.matchTemplate(screen_gray, resized, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            if max_val > best_val:
+                best_val = max_val
+                best_loc = max_loc
+
+        if best_val < self.LOGO_MATCH_THRESHOLD:
+            logger.debug("_auto_find_via_logo: best match %.3f below threshold", best_val)
+            return None, None
+
+        hit_x, hit_y = best_loc
+        # Offset by monitor origin (virtual screen may not start at 0,0)
+        try:
+            with mss.mss() as sct:
+                mon = sct.monitors[0]
+                hit_x += mon["left"]
+                hit_y += mon["top"]
+        except Exception:
+            pass
+
+        logger.info(
+            "_auto_find_via_logo: logo found at (%d, %d) conf=%.3f",
+            hit_x, hit_y, best_val,
+        )
+
+        # Find which window contains this point
+        return self._window_at_point(hit_x, hit_y)
+
+    def _window_at_point(
+        self,
+        screen_x: int,
+        screen_y: int,
+    ) -> Tuple[Optional[int], Optional[WindowInfo]]:
+        """Find the window that contains the given screen coordinate."""
+        if not WIN32_AVAILABLE:
+            return None, None
+
+        try:
+            import ctypes
+            import ctypes.wintypes
+            hwnd = ctypes.windll.user32.WindowFromPoint(
+                ctypes.wintypes.POINT(screen_x, screen_y)
+            )
+            if not hwnd:
+                return None, None
+
+            # Walk up to top-level parent
+            GA_ROOT = 2
+            root_hwnd = ctypes.windll.user32.GetAncestor(hwnd, GA_ROOT)
+            if root_hwnd:
+                hwnd = root_hwnd
+
+            title = win32gui.GetWindowText(hwnd)
+            try:
+                left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+                w, h = right - left, bottom - top
+            except Exception:
+                left, top, w, h = 0, 0, 0, 0
+
+            wi = WindowInfo(
+                hwnd=hwnd, title=title, process_name="",
+                x=left, y=top, width=w, height=h,
+                is_visible=win32gui.IsWindowVisible(hwnd),
+            )
+            return hwnd, wi
+        except Exception as exc:
+            logger.debug("_window_at_point failed: %s", exc)
+            return None, None
+
+    def _save_active_window(
+        self,
+        hwnd: int,
+        info: Optional[WindowInfo],
+    ) -> None:
+        """Persist found window to config/active_window.json."""
+        try:
+            self.ACTIVE_WINDOW_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "hwnd": hwnd,
+                "title": info.title if info else "",
+                "process_name": info.process_name if info else "",
+                "x": info.x if info else 0,
+                "y": info.y if info else 0,
+                "width": info.width if info else 0,
+                "height": info.height if info else 0,
+                "timestamp": time.time(),
+            }
+            self.ACTIVE_WINDOW_CONFIG.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            logger.info("Saved active window to %s", self.ACTIVE_WINDOW_CONFIG)
+        except Exception as exc:
+            logger.error("Failed to save active_window.json: %s", exc)
+
+    @classmethod
+    def load_active_window(cls) -> Optional[Dict[str, Any]]:
+        """Load previously saved active window from config.
+
+        Returns:
+            Dict with hwnd, title, etc. — or ``None`` if not found.
+        """
+        path = cls.ACTIVE_WINDOW_CONFIG
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
     # -- internal Win32 capture helper -------------------------------------
 
     def _win32_grab(self, hwnd: int, width: int, height: int) -> Optional[np.ndarray]:
@@ -818,6 +1159,189 @@ class ScreenCapture:
         except Exception as exc:
             logger.error("_win32_grab failed: %s", exc)
             return None
+
+
+class DXGICapturer:
+    """
+    Stealth screen capturer using Desktop Duplication API (DXGI).
+
+    Bypasses SetWindowDisplayAffinity protection that causes BitBlt/PrintWindow
+    to return a black frame. Works at the GPU compositor level — the target
+    application cannot detect or prevent this capture method.
+
+    Priority chain:
+      1. dxcam  (DXGI Desktop Duplication — best, bypasses all protections)
+      2. mss    (Desktop Duplication fallback, also bypasses SetWindowDisplayAffinity)
+      3. Win32  (BitBlt / PrintWindow — last resort, blocked by protected windows)
+
+    Usage::
+
+        cap = DXGICapturer()
+        frame = cap.capture_region(left=100, top=100, width=800, height=600)
+        # frame is a BGR numpy array or None
+
+    Hyper-V integration:
+        When the poker client runs inside a Hyper-V VM, capture it from the host
+        using vm_manager.capture_vm_screenshot() instead — that path is completely
+        invisible to the guest OS.
+    """
+
+    def __init__(self) -> None:
+        self._dxcam_camera = None
+        self._method: str = self._detect_best_method()
+        logger.info("DXGICapturer: using method '%s'", self._method)
+
+    def _detect_best_method(self) -> str:
+        if DXCAM_AVAILABLE:
+            try:
+                cam = dxcam.create(output_color="BGR")
+                if cam is not None:
+                    self._dxcam_camera = cam
+                    return "dxcam"
+            except Exception as exc:
+                logger.debug("dxcam init failed: %s", exc)
+        if MSS_AVAILABLE:
+            return "mss"
+        if WIN32_AVAILABLE:
+            return "win32"
+        return "none"
+
+    def capture_region(
+        self,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> Optional[np.ndarray]:
+        """Capture a screen region using the best available stealth method.
+
+        Args:
+            left:   Left edge of the region (absolute screen coords).
+            top:    Top edge of the region.
+            width:  Region width in pixels.
+            height: Region height in pixels.
+
+        Returns:
+            BGR numpy array or None on failure.
+        """
+        if self._method == "dxcam":
+            return self._capture_dxcam(left, top, width, height)
+        if self._method == "mss":
+            return self._capture_mss(left, top, width, height)
+        if self._method == "win32":
+            return self._capture_win32_desktop(left, top, width, height)
+        logger.error("DXGICapturer: no capture backend available")
+        return None
+
+    def capture_window(self, hwnd: int) -> Optional[np.ndarray]:
+        """Capture a specific window by handle.
+
+        Determines its screen coordinates and captures that region.
+
+        Args:
+            hwnd: Win32 window handle.
+
+        Returns:
+            BGR numpy array or None.
+        """
+        if not WIN32_AVAILABLE:
+            return None
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            width = right - left
+            height = bottom - top
+            if width <= 0 or height <= 0:
+                return None
+            return self.capture_region(left, top, width, height)
+        except Exception as exc:
+            logger.error("DXGICapturer.capture_window: %s", exc)
+            return None
+
+    # -- backends ------------------------------------------------------------
+
+    def _capture_dxcam(
+        self, left: int, top: int, width: int, height: int
+    ) -> Optional[np.ndarray]:
+        """Capture via dxcam (DXGI Desktop Duplication API)."""
+        if self._dxcam_camera is None:
+            return None
+        try:
+            region = (left, top, left + width, top + height)
+            frame = self._dxcam_camera.grab(region=region)
+            if frame is None:
+                return None
+            # dxcam returns BGR by default when output_color="BGR"
+            return frame
+        except Exception as exc:
+            logger.warning("dxcam capture failed: %s — falling back to mss", exc)
+            self._method = "mss"
+            return self._capture_mss(left, top, width, height)
+
+    def _capture_mss(
+        self, left: int, top: int, width: int, height: int
+    ) -> Optional[np.ndarray]:
+        """Capture via mss (also uses DXGI on Windows, bypasses affinity)."""
+        if not MSS_AVAILABLE:
+            return None
+        try:
+            with mss.mss() as sct:
+                monitor = {"left": left, "top": top, "width": width, "height": height}
+                grab = sct.grab(monitor)
+                img = np.array(grab)
+                # mss returns BGRA — drop alpha, keep BGR
+                return img[:, :, :3]
+        except Exception as exc:
+            logger.error("mss capture failed: %s", exc)
+            return None
+
+    def _capture_win32_desktop(
+        self, left: int, top: int, width: int, height: int
+    ) -> Optional[np.ndarray]:
+        """Last-resort: capture from desktop DC (BitBlt, not window-specific)."""
+        if not WIN32_AVAILABLE:
+            return None
+        try:
+            import win32con
+            hdc = win32gui.GetDC(0)  # 0 = desktop
+            mfc_dc = win32ui.CreateDCFromHandle(hdc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+            bitmap = win32ui.CreateBitmap()
+            bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+            save_dc.SelectObject(bitmap)
+            save_dc.BitBlt((0, 0), (width, height), mfc_dc, (left, top), win32con.SRCCOPY)
+            bmpstr = bitmap.GetBitmapBits(True)
+            img = np.frombuffer(bmpstr, dtype=np.uint8).reshape(height, width, 4)
+            result = img[:, :, :3].copy()
+            win32gui.DeleteObject(bitmap.GetHandle())
+            save_dc.DeleteDC()
+            mfc_dc.DeleteDC()
+            win32gui.ReleaseDC(0, hdc)
+            return result
+        except Exception as exc:
+            logger.error("win32 desktop capture failed: %s", exc)
+            return None
+
+    def close(self) -> None:
+        """Release resources."""
+        if self._dxcam_camera is not None:
+            try:
+                self._dxcam_camera.stop()
+            except Exception:
+                pass
+            self._dxcam_camera = None
+
+    def __del__(self) -> None:
+        self.close()
+
+    @property
+    def method(self) -> str:
+        """Active capture method name."""
+        return self._method
+
+    @property
+    def is_stealth(self) -> bool:
+        """True when using a method that bypasses SetWindowDisplayAffinity."""
+        return self._method in ("dxcam", "mss")
 
 
 # Educational example usage

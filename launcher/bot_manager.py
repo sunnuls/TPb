@@ -1,13 +1,12 @@
 """
-Bot Manager - Launcher Application (Roadmap6 Phase 2).
+Bot Manager - Launcher Application.
+
+roadmap13 Phase 4:
+  - At bot start: auto_find_window → find_anchors → calculate_all_roi
+  - Periodic ROI refresh every 25s for all active bots
+  - Fallback if anchors not found
 
 ⚠️ EDUCATIONAL RESEARCH ONLY.
-
-Features:
-- Manage pool of bot instances
-- Start/stop selected bots
-- Track active bots
-- Aggregate statistics
 """
 
 import asyncio
@@ -16,9 +15,18 @@ from typing import List, Dict, Optional
 
 from launcher.models.account import Account
 from launcher.models.roi_config import ROIConfig
-from launcher.bot_instance import BotInstance, BotStatus
+from launcher.bot_instance import BotInstance, BotStatus, AUTO_ROI_REFRESH_INTERVAL
 
 logger = logging.getLogger(__name__)
+
+try:
+    from bridge.vision.anchor_detector import (
+        detect_roi,
+        load_config as load_anchor_config,
+    )
+    HAS_ANCHOR_DETECTOR = True
+except (ImportError, Exception):
+    HAS_ANCHOR_DETECTOR = False
 
 
 class BotManager:
@@ -46,6 +54,7 @@ class BotManager:
         self.account_to_bot: Dict[str, str] = {}  # account_id -> bot_id
         self.max_vision_errors = max_vision_errors
         self._consecutive_vision_errors: Dict[str, int] = {}  # bot_id -> count
+        self._collusion_coordinator = None  # set via set_collusion_coordinator()
         
         logger.info("Bot manager initialized")
         logger.warning(
@@ -83,7 +92,11 @@ class BotManager:
         # Register
         self.bots[bot.bot_id] = bot
         self.account_to_bot[account.account_id] = bot.bot_id
-        
+
+        # Propagate collusion coordinator if already set
+        if self._collusion_coordinator is not None and hasattr(bot, "set_collusion_coordinator"):
+            bot.set_collusion_coordinator(self._collusion_coordinator)
+
         logger.info(f"Bot created: {bot.bot_id[:8]} for {account.nickname}")
         
         return bot
@@ -140,7 +153,7 @@ class BotManager:
         """
         return [bot for bot in self.bots.values() if bot.can_start()]
     
-    async def start_bot(self, bot_id: str) -> bool:
+    def start_bot(self, bot_id: str) -> bool:
         """
         Start specific bot.
         
@@ -160,12 +173,12 @@ class BotManager:
             logger.error(f"Bot {bot_id[:8]} cannot start (status: {bot.status.value})")
             return False
         
-        await bot.start()
+        bot.start()
         logger.info(f"Bot {bot_id[:8]} started")
         
         return True
     
-    async def start_selected(self, bot_ids: List[str]) -> int:
+    def start_selected(self, bot_ids: List[str]) -> int:
         """
         Start selected bots.
         
@@ -178,14 +191,14 @@ class BotManager:
         started = 0
         
         for bot_id in bot_ids:
-            if await self.start_bot(bot_id):
+            if self.start_bot(bot_id):
                 started += 1
         
         logger.info(f"Started {started}/{len(bot_ids)} bots")
         
         return started
     
-    async def start_all(self, max_count: Optional[int] = None) -> int:
+    def start_all(self, max_count: Optional[int] = None) -> int:
         """
         Start all idle bots.
         
@@ -203,14 +216,14 @@ class BotManager:
         started = 0
         
         for bot in idle_bots:
-            if await self.start_bot(bot.bot_id):
+            if self.start_bot(bot.bot_id):
                 started += 1
         
         logger.info(f"Started {started} bots (max: {max_count or 'unlimited'})")
         
         return started
     
-    async def stop_bot(self, bot_id: str) -> bool:
+    def stop_bot(self, bot_id: str) -> bool:
         """
         Stop specific bot.
         
@@ -226,12 +239,12 @@ class BotManager:
             logger.error(f"Bot {bot_id[:8]} not found")
             return False
         
-        await bot.stop()
+        bot.stop()
         logger.info(f"Bot {bot_id[:8]} stopped")
         
         return True
     
-    async def stop_all(self) -> int:
+    def stop_all(self) -> int:
         """
         Stop all active bots.
         
@@ -243,14 +256,14 @@ class BotManager:
         stopped = 0
         
         for bot in active_bots:
-            if await self.stop_bot(bot.bot_id):
+            if self.stop_bot(bot.bot_id):
                 stopped += 1
         
         logger.info(f"Stopped {stopped} bots")
         
         return stopped
     
-    async def emergency_stop(self):
+    def emergency_stop(self):
         """
         Emergency stop all bots.
         
@@ -258,13 +271,14 @@ class BotManager:
         """
         logger.critical("EMERGENCY STOP - Stopping all bots")
         
-        # Stop all bots
-        tasks = [bot.stop() for bot in self.bots.values() if bot.is_active()]
+        active = [bot for bot in self.bots.values() if bot.is_active()]
+        for bot in active:
+            try:
+                bot.stop()
+            except Exception as exc:
+                logger.error("Emergency stop error for %s: %s", bot.bot_id[:8], exc)
         
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        
-        logger.critical(f"Emergency stop complete: {len(tasks)} bots stopped")
+        logger.critical(f"Emergency stop complete: {len(active)} bots stopped")
     
     def remove_bot(self, bot_id: str) -> bool:
         """
@@ -291,6 +305,58 @@ class BotManager:
         
         return True
     
+    # -- Auto-ROI orchestration (roadmap13 Phase 4) -------------------------
+
+    def trigger_auto_roi(self, bot_id: str, *, force: bool = False) -> list:
+        """Trigger auto-ROI detection for a single bot.
+
+        Returns list of ROI zone dicts.
+        """
+        bot = self.get_bot(bot_id)
+        if bot is None:
+            logger.warning("trigger_auto_roi: bot %s not found", bot_id[:8])
+            return []
+        return bot.auto_detect_roi(force=force)
+
+    def trigger_auto_roi_all(self, *, force: bool = False) -> Dict[str, int]:
+        """Trigger auto-ROI detection for all active bots.
+
+        Returns dict mapping bot_id → zone count.
+        """
+        results: Dict[str, int] = {}
+        for bot in self.get_active_bots():
+            zones = bot.auto_detect_roi(force=force)
+            results[bot.bot_id] = len(zones)
+        logger.info(
+            "trigger_auto_roi_all: %d bots refreshed",
+            len(results),
+        )
+        return results
+
+    async def _auto_roi_refresh_loop_all(self):
+        """Background loop: refresh ROI for all active bots every interval."""
+        while True:
+            try:
+                active = self.get_active_bots()
+                for bot in active:
+                    try:
+                        bot.auto_detect_roi()
+                    except Exception as exc:
+                        logger.warning(
+                            "ROI refresh error for %s: %s",
+                            bot.bot_id[:8], exc,
+                        )
+            except Exception as exc:
+                logger.error("_auto_roi_refresh_loop_all error: %s", exc)
+            await asyncio.sleep(AUTO_ROI_REFRESH_INTERVAL)
+
+    def get_roi_summary(self) -> Dict[str, dict]:
+        """Get ROI detection summary for all bots."""
+        summary: Dict[str, dict] = {}
+        for bot_id, bot in self.bots.items():
+            summary[bot_id] = bot.get_auto_roi_info()
+        return summary
+
     def get_statistics(self) -> dict:
         """
         Get aggregate statistics.
@@ -336,6 +402,51 @@ class BotManager:
             }
         }
     
+    def update_all_bot_settings(self, settings) -> int:
+        """
+        Push a new BotSettings object (or dict) to every managed bot.
+
+        Returns:
+            Number of bots updated
+        """
+        updated = 0
+        for bot in self.get_all_bots():
+            try:
+                if hasattr(bot, "settings"):
+                    if hasattr(bot.settings, "__dict__") and hasattr(settings, "__dict__"):
+                        # Overwrite each attribute that exists in both objects
+                        for key, value in vars(settings).items():
+                            if hasattr(bot.settings, key):
+                                setattr(bot.settings, key, value)
+                    else:
+                        bot.settings = settings
+                    updated += 1
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to update settings for bot %s: %s", bot.bot_id, exc)
+
+        logger.info("Applied new settings to %d bot(s)", updated)
+        return updated
+
+    def set_live_mode(self, live: bool) -> None:
+        """Propagate live-mode flag to all managed bots."""
+        for bot in self.get_all_bots():
+            if hasattr(bot, "set_live_mode"):
+                try:
+                    bot.set_live_mode(live)
+                except Exception as exc:
+                    logger.warning("set_live_mode bot %s: %s", bot.bot_id[:8], exc)
+        logger.info("BotManager: live_mode set to %s for %d bots", live, len(self.bots))
+
+    def set_collusion_coordinator(self, coordinator) -> None:
+        """Attach a CollusionCoordinator to all current and future bots."""
+        self._collusion_coordinator = coordinator
+        for bot in self.get_all_bots():
+            if hasattr(bot, "set_collusion_coordinator"):
+                try:
+                    bot.set_collusion_coordinator(coordinator)
+                except Exception as exc:
+                    logger.warning("set_collusion_coordinator bot %s: %s", bot.bot_id[:8], exc)
+
     def record_vision_error(self, bot_id: str) -> bool:
         """
         Record vision error for bot.
@@ -382,7 +493,7 @@ class BotManager:
         if bot_id in self._consecutive_vision_errors:
             self._consecutive_vision_errors[bot_id] = 0
     
-    async def check_and_stop_error_bots(self) -> int:
+    def check_and_stop_error_bots(self) -> int:
         """
         Check all bots for vision errors and stop if needed.
         
@@ -397,7 +508,7 @@ class BotManager:
                     logger.critical(
                         f"Auto-stopping bot {bot_id[:8]} due to vision errors"
                     )
-                    if await self.stop_bot(bot_id):
+                    if self.stop_bot(bot_id):
                         stopped_count += 1
         
         return stopped_count

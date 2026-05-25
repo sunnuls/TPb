@@ -97,6 +97,12 @@ class TableState:
     # Bridge-specific (Phase 2)
     extraction_method: str = "simulated"  # simulated | ocr | vision
     confidence: float = 1.0  # Extraction confidence (0.0-1.0)
+
+    # Phase 4: action detection
+    is_bots_turn: bool = False  # True when fold/call/raise buttons are visible
+
+    # Phase 4: action detection
+    is_bots_turn: bool = False   # True when fold/call/raise buttons visible
     
     def get_hero(self) -> Optional[PlayerState]:
         """Get hero player state."""

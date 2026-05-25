@@ -1,21 +1,28 @@
 """
-Launcher Application Main Entry Point (Roadmap6).
+HIVE Launcher — Main Entry Point.
 
 ⚠️ CRITICAL ETHICAL WARNING:
-    This launches coordinated bot management system (COLLUSION).
-    
-    EXTREMELY UNETHICAL and ILLEGAL in real poker.
-    Educational research only. NEVER use without explicit consent.
+    This launches a coordinated multi-bot collusion system.
+    EXTREMELY UNETHICAL and ILLEGAL in real-money poker.
+    Educational / game-theory research only.
+    NEVER use without the explicit consent of ALL participants.
 
-Standalone GUI application for HIVE bot coordination.
+Standalone GUI application built on PyQt6.
 """
 
 import logging
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
+# Ensure project root is on sys.path when run directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Apply process stealth at startup (hides console, renames process)
+try:
+    from launcher.stealth_launcher import apply_stealth_at_startup
+    apply_stealth_at_startup(index=0)
+except Exception:
+    pass
 
 try:
     from PyQt6.QtWidgets import QApplication
@@ -23,197 +30,67 @@ try:
 except (ImportError, ModuleNotFoundError):
     PYQT6_AVAILABLE = False
 
-from launcher.ui.main_window import MainWindow
-from launcher.system_tray import SystemTrayManager
-
-# Setup logging
+# Setup logging before any other import so the log handler is available
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
 
 logger = logging.getLogger(__name__)
 
 
-class LauncherApp:
-    """
-    Main launcher application.
-    
-    Coordinates GUI, system tray, and bot management.
-    
-    ⚠️ EDUCATIONAL NOTE:
-        Manages coordinated bot operations for research.
-    """
-    
-    def __init__(self):
-        """Initialize launcher application."""
-        if not PYQT6_AVAILABLE:
-            raise ImportError(
-                "PyQt6 not available. Install with: pip install PyQt6"
-            )
-        
-        logger.critical(
-            "=" * 60 + "\n"
-            "HIVE LAUNCHER STARTING\n"
-            "Educational Research Only\n"
-            "COLLUSION SYSTEM - ILLEGAL IN REAL POKER\n"
-            "=" * 60
-        )
-        
-        # Create QApplication
-        self.app = QApplication(sys.argv)
-        self.app.setApplicationName("HIVE Launcher")
-        self.app.setOrganizationName("Educational Research")
-        
-        # Apply dark theme
-        self._apply_dark_theme()
-        
-        # Create main window
-        self.main_window = MainWindow()
-        
-        # Create system tray
-        self.system_tray = SystemTrayManager(
-            app=self.app,
-            main_window=self.main_window
-        )
-        
-        # Connect signals
-        self._connect_signals()
-        
-        # Show components
-        self.main_window.show()
-        self.system_tray.show()
-        
-        logger.info("Launcher application initialized")
-    
-    def _apply_dark_theme(self):
-        """Apply dark theme to application."""
-        dark_stylesheet = """
-        QMainWindow {
-            background-color: #2b2b2b;
-        }
-        QWidget {
-            background-color: #2b2b2b;
-            color: #ffffff;
-        }
-        QTabWidget::pane {
-            border: 1px solid #444444;
-            background-color: #2b2b2b;
-        }
-        QTabBar::tab {
-            background-color: #3c3c3c;
-            color: #ffffff;
-            padding: 8px 16px;
-            margin: 2px;
-            border: 1px solid #444444;
-        }
-        QTabBar::tab:selected {
-            background-color: #0d7377;
-            border-bottom: 2px solid #14ffec;
-        }
-        QPushButton {
-            background-color: #3c3c3c;
-            color: #ffffff;
-            border: 1px solid #555555;
-            padding: 6px 12px;
-            border-radius: 4px;
-        }
-        QPushButton:hover {
-            background-color: #4c4c4c;
-        }
-        QPushButton:pressed {
-            background-color: #2c2c2c;
-        }
-        QLabel {
-            color: #ffffff;
-        }
-        QMenuBar {
-            background-color: #2b2b2b;
-            color: #ffffff;
-        }
-        QMenuBar::item:selected {
-            background-color: #3c3c3c;
-        }
-        QMenu {
-            background-color: #2b2b2b;
-            color: #ffffff;
-            border: 1px solid #444444;
-        }
-        QMenu::item:selected {
-            background-color: #0d7377;
-        }
-        QStatusBar {
-            background-color: #1e1e1e;
-            color: #ffffff;
-        }
-        """
-        
-        self.app.setStyleSheet(dark_stylesheet)
-    
-    def _connect_signals(self):
-        """Connect system tray signals."""
-        # Start all bots
-        self.system_tray.start_all_requested.connect(
-            self._on_start_all_bots
-        )
-        
-        # Stop all bots
-        self.system_tray.stop_all_requested.connect(
-            self._on_stop_all_bots
-        )
-        
-        logger.debug("Signals connected")
-    
-    def _on_start_all_bots(self):
-        """Handle start all bots request."""
-        logger.info("START ALL BOTS requested")
-        
-        # Will be implemented in Phase 2
-        self.system_tray.show_notification(
-            "HIVE Launcher",
-            "Start all bots - Coming in Phase 2",
-            duration=2000
-        )
-    
-    def _on_stop_all_bots(self):
-        """Handle stop all bots request."""
-        logger.info("STOP ALL BOTS requested")
-        
-        # Will be implemented in Phase 2
-        self.system_tray.show_notification(
-            "HIVE Launcher",
-            "Stop all bots - Coming in Phase 2",
-            duration=2000
-        )
-    
-    def run(self) -> int:
-        """
-        Run application.
-        
-        Returns:
-            Exit code
-        """
-        logger.info("Starting application event loop")
-        
-        return self.app.exec()
+def main() -> int:
+    """Application entry point."""
+    if not PYQT6_AVAILABLE:
+        print("ERROR: PyQt6 is not installed.")
+        print("  pip install PyQt6")
+        return 1
 
+    logger.critical(
+        "\n%s\nHIVE LAUNCHER  v2.0\n"
+        "Educational research only — collusion system — ILLEGAL in real poker\n%s",
+        "=" * 60, "=" * 60,
+    )
 
-def main():
-    """Main entry point."""
+    from launcher.ui.theme import apply_dark_theme
+    from launcher.ui.main_window import MainWindow
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("HIVE Launcher")
+    app.setApplicationVersion("2.0")
+    app.setOrganizationName("Educational Research")
+
+    # Apply the unified dark theme (palette + QSS)
+    apply_dark_theme(app)
+
+    # Create main window first (tray needs real reference)
+    window = MainWindow()
+
+    # Try to set up system tray (optional — requires display/QSystemTrayIcon support)
     try:
-        app = LauncherApp()
-        return app.run()
-    
-    except ImportError as e:
-        print(f"ERROR: {e}")
-        print("\nInstall requirements:")
-        print("  pip install -r launcher/requirements.txt")
-        return 1
-    
-    except Exception as e:
-        logger.error(f"Application error: {e}", exc_info=True)
-        return 1
+        from launcher.system_tray import SystemTrayManager
+
+        tray = SystemTrayManager(app=app, main_window=window)
+
+        # Wire tray signals → window actions
+        tray.start_all_requested.connect(window._start_all_bots)
+        tray.stop_all_requested.connect(window._stop_all_bots)
+        tray.emergency_stop_requested.connect(window._on_emergency_stop)
+        tray.show_window_requested.connect(window.show)
+
+        # Give window a reference so it can update the tooltip each second
+        window._tray_manager = tray
+        tray.show()
+        logger.info("System tray initialized")
+    except Exception as exc:
+        logger.debug("System tray not available: %s", exc)
+        window._tray_manager = None
+
+    window.show()
+
+    logger.info("Application event loop started")
+    return app.exec()
 
 
 if __name__ == "__main__":

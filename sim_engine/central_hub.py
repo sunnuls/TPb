@@ -588,35 +588,133 @@ class CentralHub:
     def _calculate_collective_equity(
         self,
         known_cards: List[str],
-        environment_id: str
+        environment_id: str,
     ) -> float:
-        """
-        Calculate collective equity for HIVE group.
-        
-        Educational simplification:
-        - More known cards = higher equity estimate
-        - Real implementation would use poker equity calculator
-        - For research: studies how information pooling affects decisions
-        
+        """Calculate collective equity using treys poker evaluator.
+
+        Computes the win probability of the best hand among the HIVE team's
+        known hole cards against a random opponent range, using Monte Carlo
+        simulation (1000 iterations for speed, full eval for accuracy).
+
         Args:
-            known_cards: All cards known to the collective
-            environment_id: Session identifier
-            
+            known_cards:    All hole cards known to the collective (6 cards for 3 bots).
+            environment_id: Session identifier (used to get board cards).
+
         Returns:
-            Equity percentage (0.0 to 1.0)
+            Win probability [0.0, 1.0].
         """
         session = self._sessions.get(environment_id, {})
-        board = session.get("board", [])
-        
-        # Simplified equity calculation
-        # More known cards + coordinated agents = higher equity
+        board_cards: List[str] = session.get("board", [])
+
+        if not known_cards:
+            return 0.50
+
+        # Try to use treys for accurate equity
+        try:
+            return self._treys_equity(known_cards, board_cards)
+        except Exception:
+            pass
+
+        # Fallback: heuristic (original simplified calculation)
         base_equity = 0.5
-        card_bonus = len(known_cards) * 0.03  # +3% per known card
-        board_bonus = len(board) * 0.02  # +2% per board card
-        
-        equity = min(0.95, base_equity + card_bonus + board_bonus)
-        
-        return equity
+        card_bonus = len(known_cards) * 0.03
+        board_bonus = len(board_cards) * 0.02
+        return min(0.95, base_equity + card_bonus + board_bonus)
+
+    @staticmethod
+    def _treys_equity(
+        hole_cards: List[str],
+        board: List[str],
+        num_simulations: int = 1000,
+    ) -> float:
+        """Monte Carlo equity using the treys library.
+
+        Groups hole_cards into 2-card hands (one per bot) and computes the
+        probability that the best HIVE hand beats a random opponent hand.
+
+        Args:
+            hole_cards:      All team hole cards, e.g. ["As","Kh","Qd","Jc","Td","9s"]
+            board:           Community cards already dealt, e.g. ["2h","5s","9d"]
+            num_simulations: Monte Carlo iterations.
+
+        Returns:
+            Win probability [0.0, 1.0].
+        """
+        from treys import Card, Evaluator, Deck  # type: ignore[import]
+
+        evaluator = Evaluator()
+
+        # Convert string notation to treys Card ints
+        def to_treys(card_str: str) -> int:
+            # treys uses uppercase rank + lowercase suit: "As" → Card.new("As")
+            return Card.new(card_str)
+
+        # Parse team hands (pairs of cards)
+        team_hands: List[List[int]] = []
+        for i in range(0, len(hole_cards) - 1, 2):
+            try:
+                h = [to_treys(hole_cards[i]), to_treys(hole_cards[i + 1])]
+                team_hands.append(h)
+            except Exception:
+                continue
+
+        if not team_hands:
+            return 0.50
+
+        board_treys = []
+        for c in board:
+            try:
+                board_treys.append(to_treys(c))
+            except Exception:
+                pass
+
+        # Build a deck without known cards
+        used = set(hole_cards + board)
+        deck = Deck()
+        deck.cards = [c for c in deck.cards
+                      if Card.int_to_str(c) not in used]
+
+        wins = 0
+        valid_sims = 0
+
+        for _ in range(num_simulations):
+            try:
+                deck_copy = list(deck.cards)
+
+                # Deal remaining board cards (need 5 total)
+                needed_board = 5 - len(board_treys)
+                if needed_board > len(deck_copy):
+                    continue
+
+                import random
+                run_board = board_treys + random.sample(deck_copy, needed_board)
+                deck_remaining = [c for c in deck_copy
+                                  if c not in run_board[len(board_treys):]]
+
+                # Deal opponent 2 cards
+                if len(deck_remaining) < 2:
+                    continue
+                opp_hand = random.sample(deck_remaining, 2)
+
+                # Best team hand score (lower = better in treys)
+                best_team_score = min(
+                    evaluator.evaluate(run_board, hand)
+                    for hand in team_hands
+                    if all(c not in run_board for c in hand)
+                )
+                opp_score = evaluator.evaluate(run_board, opp_hand)
+
+                if best_team_score < opp_score:
+                    wins += 1
+                valid_sims += 1
+
+            except Exception:
+                continue
+
+        if valid_sims == 0:
+            return 0.50
+
+        return wins / valid_sims
     
     async def broadcast_collective_state(
         self,
@@ -769,6 +867,142 @@ class CentralHub:
         session = self._sessions.get(environment_id, {})
         session.pop("hole_cards", None)
         session.pop("hand_id", None)
+
+    # ── TABLE_FOUND coordination protocol ────────────────────────────────────
+
+    async def broadcast_table_found(
+        self,
+        finder_agent_id: str,
+        table_info: Dict[str, Any],
+        environment_id: Optional[str] = None,
+    ) -> None:
+        """Broadcast TABLE_FOUND to all agents in an environment.
+
+        Called by the bot that first finds a suitable table.
+        Other bots in the same environment should navigate to this table.
+
+        Args:
+            finder_agent_id: Bot ID that found the table.
+            table_info:      Dict with table_name, stakes, row_y, etc.
+            environment_id:  Target environment (None = all agents).
+        """
+        msg = {
+            "type": "TABLE_FOUND",
+            "finder": finder_agent_id,
+            "table": table_info,
+            "timestamp": time.time(),
+        }
+        encrypted = self.encrypt_state(msg)
+        payload = json.dumps({"type": "TABLE_FOUND", "data": encrypted})
+
+        targets = list(self.agents.values())
+        if environment_id:
+            targets = [a for a in targets if a.environment_id == environment_id]
+
+        for conn in targets:
+            if conn.agent_id == finder_agent_id:
+                continue  # don't send back to finder
+            try:
+                await conn.websocket.send(payload)
+            except Exception:
+                pass
+
+    async def wait_for_agents(
+        self,
+        environment_id: str,
+        required_count: int = 3,
+        timeout: float = 30.0,
+    ) -> bool:
+        """Wait until a minimum number of agents are connected to an environment.
+
+        Args:
+            environment_id: Environment to watch.
+            required_count: Minimum number of agents required.
+            timeout:        Max seconds to wait.
+
+        Returns:
+            True if enough agents connected, False on timeout.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            count = sum(
+                1 for a in self.agents.values()
+                if a.environment_id == environment_id
+                and a.status in (AgentStatus.ACTIVE, AgentStatus.IDLE)
+            )
+            if count >= required_count:
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
+    def get_environment_agents(self, environment_id: str) -> List[str]:
+        """Return agent IDs currently in an environment."""
+        return [
+            a.agent_id for a in self.agents.values()
+            if a.environment_id == environment_id
+        ]
+
+    def is_agent_connected(self, agent_id: str) -> bool:
+        """Check if a specific agent is currently connected."""
+        conn = self.agents.get(agent_id)
+        return conn is not None and conn.status != AgentStatus.DISCONNECTED
+
+    # ── Collective DECISION broadcast ─────────────────────────────────────────
+
+    async def broadcast_decision(
+        self,
+        environment_id: str,
+        decisions: Dict[str, Any],
+    ) -> None:
+        """Broadcast individual decisions to each agent in an environment.
+
+        Called after collective equity calculation. Each agent receives
+        its own prescribed action (raise / call / fold).
+
+        Args:
+            environment_id: Target environment.
+            decisions:       Dict mapping agent_id → {action, amount, strategy}.
+        """
+        for agent_id, decision in decisions.items():
+            conn = self.agents.get(agent_id)
+            if conn is None:
+                continue
+            msg = {
+                "type": "DECISION",
+                "agent_id": agent_id,
+                "action": decision.get("action", "fold"),
+                "amount": decision.get("amount", 0.0),
+                "strategy": decision.get("strategy", ""),
+                "timestamp": time.time(),
+            }
+            encrypted = self.encrypt_state(msg)
+            payload = json.dumps({"type": "DECISION", "data": encrypted})
+            try:
+                await conn.websocket.send(payload)
+            except Exception:
+                pass
+
+    # ── Agent disconnect / fallback ───────────────────────────────────────────
+
+    def handle_agent_disconnect(self, agent_id: str) -> None:
+        """Mark an agent as disconnected and clean up its session data."""
+        conn = self.agents.get(agent_id)
+        if conn:
+            conn.status = AgentStatus.DISCONNECTED
+            # Remove from environments
+            for env_id, env_agents in list(self.environments.items()):
+                env_agents.discard(agent_id)
+            # Clear any partial card shares from this agent
+            for session in self._sessions.values():
+                cards = session.get("hole_cards", {})
+                cards.pop(agent_id, None)
+
+    async def reconnect_check(self, environment_id: str) -> Dict[str, bool]:
+        """Return connection status for all expected agents in environment."""
+        result = {}
+        for agent_id in self.get_environment_agents(environment_id):
+            result[agent_id] = self.is_agent_connected(agent_id)
+        return result
 
     async def stop(self) -> None:
         """Stop the hub server."""

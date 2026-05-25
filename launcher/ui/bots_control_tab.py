@@ -1,516 +1,674 @@
 """
-Bots Control Tab - Launcher Application (Roadmap6).
+Bots Control Tab — three sub-tabs:
+  1. Active Bots  — live table (№ Nickname Status Table Stack Edge Uptime Profile Action)
+  2. Lobby        — table scanner + HIVE deployment
+  3. HIVE Sessions — active collusion sessions / deployments
+
+Top strip: ToggleSwitch (LIVE/STOP) + HIVE launch + Emergency Stop.
 
 ⚠️ EDUCATIONAL RESEARCH ONLY.
-
-Features:
-- Start/stop individual bots
-- Start collusion groups (3 bots)
-- Monitor bot status
-- View active sessions
 """
 
 import logging
 from typing import List, Optional
 
 try:
-    from PyQt6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-        QTableWidget, QTableWidgetItem, QHeaderView,
-        QLabel, QSpinBox, QGroupBox, QMessageBox,
-        QComboBox
+    from PyQt6.QtCore import (
+        Qt, QTimer, QPropertyAnimation, QEasingCurve,
+        pyqtSignal, pyqtProperty, QRectF,
     )
-    from PyQt6.QtCore import Qt, QTimer
-    from PyQt6.QtGui import QColor
+    from PyQt6.QtGui import QColor, QPainter, QBrush, QPen, QFont
+    from PyQt6.QtWidgets import (
+        QComboBox, QGroupBox, QHBoxLayout, QHeaderView,
+        QLabel, QMessageBox, QPushButton,
+        QTableWidget, QTableWidgetItem, QTabWidget,
+        QVBoxLayout, QWidget, QSizePolicy,
+    )
     PYQT_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     PYQT_AVAILABLE = False
 
-from launcher.models.account import Account, AccountStatus
-from launcher.auto_bot_controller import AutoBotController, BotState
+from launcher.models.account import Account
+from launcher.bot_instance import BotStatus
+from launcher.ui.theme import COLORS
+from launcher.ui.lobby_panel import LobbyPanel
+from launcher.ui.hive_sessions_widget import HiveSessionsWidget
+from launcher.ui.session_history_widget import SessionHistoryWidget
 
 logger = logging.getLogger(__name__)
 
+_STATUS_COLORS = {
+    BotStatus.IDLE:      COLORS["text_secondary"],
+    BotStatus.STARTING:  COLORS["accent_orange"],
+    BotStatus.SEARCHING: COLORS["accent_blue"],
+    BotStatus.SEATED:    COLORS["accent_purple"],
+    BotStatus.PLAYING:   COLORS["accent_green"],
+    BotStatus.ERROR:     COLORS["accent_red"],
+    BotStatus.STOPPED:   "#505570",
+}
 
-class BotsControlTab(QWidget):
-    """
-    Bots control tab.
-    
-    Features:
-    - Start/stop bots
-    - Collusion groups
-    - Status monitoring
-    
-    ⚠️ EDUCATIONAL NOTE:
-        Controls automated bot operation.
-    """
-    
-    def __init__(self, parent=None):
-        """Initialize bots control tab."""
-        super().__init__(parent)
-        
-        self.accounts: List[Account] = []
-        self.controller = AutoBotController()
-        
-        self._setup_ui()
-        
-        # Update timer
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self._update_status)
-        self.update_timer.start(1000)  # Update every second
-    
-    def _setup_ui(self):
-        """Setup UI."""
-        layout = QVBoxLayout(self)
-        
-        # Header
-        header = QLabel("🤖 Automated Bot Control")
-        header.setStyleSheet("font-size: 16pt; font-weight: bold; color: #00AAFF;")
-        layout.addWidget(header)
-        
-        # Quick Start Section
-        quick_start_group = self._create_quick_start_section()
-        layout.addWidget(quick_start_group)
-        
-        # Active Bots Table
-        bots_group = QGroupBox("Active Bots")
-        bots_layout = QVBoxLayout(bots_group)
-        
-        self.bots_table = QTableWidget()
-        self.bots_table.setColumnCount(6)
-        self.bots_table.setHorizontalHeaderLabels([
-            "Nickname",
-            "State",
-            "Table",
-            "Stack",
-            "Uptime",
-            "Actions"
-        ])
-        
-        header = self.bots_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        
-        self.bots_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.bots_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        
-        bots_layout.addWidget(self.bots_table)
-        
-        layout.addWidget(bots_group)
-        
-        # Control Buttons
-        control_layout = QHBoxLayout()
-        
-        stop_all_btn = QPushButton("⏹️ Stop All Bots")
-        stop_all_btn.setStyleSheet("background-color: #AA0000; color: white; font-weight: bold; padding: 10px;")
-        stop_all_btn.clicked.connect(self._on_stop_all)
-        control_layout.addWidget(stop_all_btn)
-        
-        debug_viewer_btn = QPushButton("🔍 Debug Viewer")
-        debug_viewer_btn.setStyleSheet("background-color: #FF6600; color: white; font-weight: bold; padding: 10px;")
-        debug_viewer_btn.setToolTip("See what the selected bot sees")
-        debug_viewer_btn.clicked.connect(self._on_open_debug_viewer)
-        control_layout.addWidget(debug_viewer_btn)
-        
-        control_layout.addStretch()
-        
-        layout.addLayout(control_layout)
-    
-    def _create_quick_start_section(self) -> QGroupBox:
-        """Create quick start section."""
-        group = QGroupBox("Quick Start")
-        layout = QVBoxLayout(group)
-        
-        # Single Bot
-        single_layout = QHBoxLayout()
-        
-        single_label = QLabel("Start Single Bot:")
-        single_layout.addWidget(single_label)
-        
-        self.single_bot_combo = QComboBox()
-        self.single_bot_combo.setPlaceholderText("Select account...")
-        single_layout.addWidget(self.single_bot_combo)
-        
-        start_single_btn = QPushButton("▶️ Start Bot")
-        start_single_btn.setStyleSheet("background-color: #00AA00; color: white; font-weight: bold;")
-        start_single_btn.clicked.connect(self._on_start_single_bot)
-        single_layout.addWidget(start_single_btn)
-        
-        single_layout.addStretch()
-        
-        layout.addLayout(single_layout)
-        
-        # Collusion Group
-        collusion_layout = QHBoxLayout()
-        
-        collusion_label = QLabel("Start Collusion Group (3 bots):")
-        collusion_layout.addWidget(collusion_label)
-        
-        self.collusion_combo1 = QComboBox()
-        self.collusion_combo1.setPlaceholderText("Bot 1...")
-        collusion_layout.addWidget(self.collusion_combo1)
-        
-        self.collusion_combo2 = QComboBox()
-        self.collusion_combo2.setPlaceholderText("Bot 2...")
-        collusion_layout.addWidget(self.collusion_combo2)
-        
-        self.collusion_combo3 = QComboBox()
-        self.collusion_combo3.setPlaceholderText("Bot 3...")
-        collusion_layout.addWidget(self.collusion_combo3)
-        
-        start_collusion_btn = QPushButton("🤝 Start Collusion")
-        start_collusion_btn.setStyleSheet("background-color: #9900FF; color: white; font-weight: bold; padding: 10px;")
-        start_collusion_btn.clicked.connect(self._on_start_collusion)
-        collusion_layout.addWidget(start_collusion_btn)
-        
-        layout.addLayout(collusion_layout)
-        
-        # Info
-        info_label = QLabel(
-            "ℹ️ Collusion: 3 bots will coordinate on the same table (3vs1 strategy)\n"
-            "⚠️ Make sure all 3 accounts have Game Settings configured!"
-        )
-        info_label.setStyleSheet("color: #FFAA00; font-style: italic;")
-        layout.addWidget(info_label)
-        
-        return group
-    
-    def set_accounts(self, accounts: List[Account]):
+
+def _item(text: str, color: Optional[str] = None) -> QTableWidgetItem:
+    it = QTableWidgetItem(text)
+    if color:
+        it.setForeground(QColor(color))
+    it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    return it
+
+
+if PYQT_AVAILABLE:
+    class BotToggleSwitch(QWidget):
         """
-        Set available accounts.
-        
-        Args:
-            accounts: List of accounts
+        Combined Start/Stop toggle switch.
+
+        Visual design:
+          - OFF state: left half dark, right half red  [● STOP]
+          - ON  state: left half green, right half dark [LIVE ●]
+          - Smooth animation between states.
+
+        Signals:
+          toggled(bool): emitted with new state when user clicks.
         """
-        self.accounts = accounts
-        self._update_account_combos()
-    
-    def _update_account_combos(self):
-        """Update account combo boxes."""
-        # Get ready accounts
-        ready_accounts = [
-            acc for acc in self.accounts
-            if acc.window_info.is_captured() and acc.roi_configured and acc.game_preferences
-        ]
-        
-        # Update combos
-        for combo in [self.single_bot_combo, self.collusion_combo1, self.collusion_combo2, self.collusion_combo3]:
-            combo.clear()
-            for acc in ready_accounts:
-                combo.addItem(acc.nickname, acc.account_id)
-    
-    def _on_start_single_bot(self):
-        """Start single bot."""
-        account_id = self.single_bot_combo.currentData()
-        if not account_id:
-            QMessageBox.warning(self, "No Selection", "Please select an account.")
-            return
-        
-        account = next((a for a in self.accounts if a.account_id == account_id), None)
-        if not account:
-            return
-        
-        # Verify account is ready
-        if not account.game_preferences:
-            QMessageBox.warning(
-                self,
-                "Not Configured",
-                f"Account {account.nickname} needs Game Settings.\n\n"
-                "Go to Accounts tab and click 'Game Settings'."
-            )
-            return
-        
-        # Confirm
-        games = [g.value for g in account.game_preferences.enabled_games]
-        reply = QMessageBox.question(
+
+        toggled = pyqtSignal(bool)
+
+        _TRACK_ON_COLOR   = QColor("#1a4a1a")
+        _TRACK_OFF_COLOR  = QColor("#3a0a0a")
+        _KNOB_ON_COLOR    = QColor("#3ddc84")   # green
+        _KNOB_OFF_COLOR   = QColor("#ff5555")   # red
+        _LABEL_ON         = "LIVE"
+        _LABEL_OFF        = "STOP"
+        _MIN_W, _MIN_H    = 120, 36
+
+        def __init__(self, parent: Optional[QWidget] = None) -> None:
+            super().__init__(parent)
+            self._checked: bool = False
+            self._knob_x_frac: float = 0.0   # 0.0 = left (OFF), 1.0 = right (ON)
+
+            self._anim = QPropertyAnimation(self, b"knob_pos", self)
+            self._anim.setDuration(180)
+            self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+            self.setMinimumSize(self._MIN_W, self._MIN_H)
+            self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Click to toggle all bots ON / OFF")
+
+        # -- property for animation ------------------------------------------
+
+        def _get_knob_pos(self) -> float:
+            return self._knob_x_frac
+
+        def _set_knob_pos(self, v: float) -> None:
+            self._knob_x_frac = max(0.0, min(1.0, v))
+            self.update()
+
+        knob_pos = pyqtProperty(float, _get_knob_pos, _set_knob_pos)
+
+        # -- public API -------------------------------------------------------
+
+        def is_on(self) -> bool:
+            return self._checked
+
+        def set_state(self, on: bool, animate: bool = True) -> None:
+            """Set switch state programmatically without emitting toggled."""
+            self._checked = on
+            target = 1.0 if on else 0.0
+            if animate:
+                self._anim.stop()
+                self._anim.setStartValue(self._knob_x_frac)
+                self._anim.setEndValue(target)
+                self._anim.start()
+            else:
+                self._knob_x_frac = target
+                self.update()
+
+        # -- events ----------------------------------------------------------
+
+        def mousePressEvent(self, event) -> None:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._checked = not self._checked
+                self.set_state(self._checked, animate=True)
+                self.toggled.emit(self._checked)
+
+        def paintEvent(self, event) -> None:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            w, h = self.width(), self.height()
+            r    = h / 2
+            pad  = 3
+
+            # Track
+            track_color = self._TRACK_ON_COLOR if self._checked else self._TRACK_OFF_COLOR
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(track_color))
+            p.drawRoundedRect(0, 0, w, h, r, r)
+
+            # Border
+            border_color = self._KNOB_ON_COLOR if self._checked else self._KNOB_OFF_COLOR
+            p.setPen(QPen(border_color, 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(1, 1, w - 2, h - 2, r - 1, r - 1)
+
+            # Knob
+            knob_diam   = h - pad * 2
+            max_knob_x  = w - knob_diam - pad
+            knob_x      = pad + self._knob_x_frac * max_knob_x
+
+            knob_color = self._KNOB_ON_COLOR if self._checked else self._KNOB_OFF_COLOR
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(knob_color))
+            p.drawEllipse(QRectF(knob_x, pad, knob_diam, knob_diam))
+
+            # Label
+            label = self._LABEL_ON if self._checked else self._LABEL_OFF
+            label_color = self._KNOB_ON_COLOR if self._checked else self._KNOB_OFF_COLOR
+            font = QFont()
+            font.setPointSize(8)
+            font.setBold(True)
+            p.setFont(font)
+            p.setPen(QPen(label_color))
+
+            # Place label on the opposite side from the knob
+            if self._checked:
+                text_rect = QRectF(pad, 0, max_knob_x - pad, h)
+            else:
+                text_rect = QRectF(knob_x + knob_diam + pad, 0,
+                                   w - knob_x - knob_diam - pad * 2, h)
+            p.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, label)
+
+            p.end()
+
+
+    class BotsControlTab(QWidget):
+        """
+        Bot control tab with 3 inner sub-tabs.
+
+        Signals
+        -------
+        emergency_stop_requested  — relayed to MainWindow
+        """
+
+        emergency_stop_requested = pyqtSignal()
+
+        def __init__(
             self,
-            "Start Bot",
-            f"Start bot for {account.nickname}?\n\n"
-            f"Game modes: {', '.join(games)}\n"
-            f"Stakes: {account.game_preferences.min_stake} - {account.game_preferences.max_stake}\n\n"
-            f"Bot will:\n"
-            f"1. Navigate to game mode\n"
-            f"2. Find suitable table\n"
-            f"3. Join and play\n\n"
-            f"Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        
-        logger.info(f"Starting bot for {account.nickname}")
-        
-        success = self.controller.start_bot(account)
-        
-        if success:
-            account.status = AccountStatus.RUNNING
-            account.bot_running = True
-            QMessageBox.information(
-                self,
-                "Bot Started",
-                f"Bot started for {account.nickname}!\n\n"
-                f"Check Logs tab for details."
+            parent: Optional[QWidget] = None,
+            bot_manager=None,
+            collusion_coordinator=None,
+            auto_seating_manager=None,
+        ) -> None:
+            super().__init__(parent)
+
+            self.accounts: List[Account]  = []
+            self._bot_manager             = bot_manager
+            self._collusion_coordinator   = collusion_coordinator
+            self._auto_seating_manager    = auto_seating_manager
+
+            self._setup_ui()
+
+            self._refresh_timer = QTimer(self)
+            self._refresh_timer.timeout.connect(self._refresh_bots_table)
+            self._refresh_timer.start(1000)
+
+        # ── Public API ────────────────────────────────────────────────────────
+
+        def set_accounts(self, accounts: List[Account]) -> None:
+            self.accounts = accounts
+            self._update_combos()
+            # Forward to lobby panel so it can use real CoinPoker HWND
+            if hasattr(self, "lobby_panel"):
+                self.lobby_panel.set_accounts(accounts)
+
+        def set_bot_manager(self, m) -> None:
+            self._bot_manager = m
+            self.lobby_panel.set_bot_manager(m)
+            self.hive_sessions.set_bot_manager(m)
+
+        def set_collusion_coordinator(self, c) -> None:
+            self._collusion_coordinator = c
+            self.hive_sessions.set_collusion_coordinator(c)
+
+        def set_auto_seating_manager(self, m) -> None:
+            self._auto_seating_manager = m
+            self.lobby_panel.set_auto_seating_manager(m)
+            self.hive_sessions.set_auto_seating_manager(m)
+
+        def set_session_logger(self, session_logger) -> None:
+            self.session_history.set_session_logger(session_logger)
+
+        def set_live_mode(self, live: bool) -> None:
+            """Update mode banner to reflect DRY-RUN vs LIVE state."""
+            if live:
+                self._mode_banner.setText(
+                    "🔴  LIVE MODE — bots send REAL mouse/keyboard input to CoinPoker. "
+                    "Switch to DRY-RUN in Settings to stop real actions."
+                )
+                self._mode_banner.setStyleSheet(
+                    "background:#3a0000; color:#ff6b6b; border:1px solid #800000;"
+                    " border-radius:4px; padding:5px 10px; font-size:9pt; font-weight:bold;"
+                )
+            else:
+                self._mode_banner.setText(
+                    "🔵  DRY-RUN MODE — bots simulate actions only, NO real table interaction. "
+                    "Status SEARCHING = bot is active and looking for a table."
+                )
+                self._mode_banner.setStyleSheet(
+                    "background:#0d2240; color:#6ab4ff; border:1px solid #1a4080;"
+                    " border-radius:4px; padding:5px 10px; font-size:9pt;"
+                )
+
+        def start_all_bots(self) -> None:
+            self._on_start_single()
+            self.all_toggle.set_state(True)
+
+        def stop_all_bots(self) -> None:
+            self._on_stop_selected()
+            self.all_toggle.set_state(False)
+
+        # ── UI setup ──────────────────────────────────────────────────────────
+
+        def _setup_ui(self) -> None:
+            root = QVBoxLayout(self)
+            root.setContentsMargins(8, 8, 8, 8)
+            root.setSpacing(6)
+
+            # ── Top strip: title + quick-start + emergency stop ────────────────
+            root.addWidget(self._build_top_strip())
+
+            # ── DRY-RUN / mode banner ─────────────────────────────────────────
+            self._mode_banner = QLabel(
+                "🔵  DRY-RUN MODE — bots simulate actions only, NO real table interaction. "
+                "Status SEARCHING = bot is active and looking for a table."
             )
-        else:
-            QMessageBox.critical(
-                self,
-                "Start Failed",
-                f"Failed to start bot for {account.nickname}.\n\n"
-                "Check logs for details."
+            self._mode_banner.setWordWrap(True)
+            self._mode_banner.setStyleSheet(
+                "background:#0d2240; color:#6ab4ff; border:1px solid #1a4080;"
+                " border-radius:4px; padding:5px 10px; font-size:9pt;"
             )
-    
-    def _on_start_collusion(self):
-        """Start collusion group."""
-        # Get selected accounts
-        account_ids = [
-            self.collusion_combo1.currentData(),
-            self.collusion_combo2.currentData(),
-            self.collusion_combo3.currentData()
-        ]
-        
-        if None in account_ids:
-            QMessageBox.warning(self, "Incomplete Selection", "Please select all 3 accounts.")
-            return
-        
-        # Check for duplicates
-        if len(set(account_ids)) != 3:
-            QMessageBox.warning(self, "Duplicate Selection", "Please select 3 different accounts.")
-            return
-        
-        # Get accounts
-        accounts = [
-            next((a for a in self.accounts if a.account_id == aid), None)
-            for aid in account_ids
-        ]
-        
-        if None in accounts:
-            return
-        
-        # Verify all configured
-        for acc in accounts:
-            if not acc.game_preferences:
+            root.addWidget(self._mode_banner)
+
+            # ── Inner tab widget ──────────────────────────────────────────────
+            self.inner_tabs = QTabWidget()
+            self.inner_tabs.setTabPosition(QTabWidget.TabPosition.North)
+
+            # Tab 1: Active Bots
+            self.inner_tabs.addTab(self._build_active_bots_panel(), "Active Bots")
+
+            # Tab 2: Lobby Scanner
+            self.lobby_panel = LobbyPanel(
+                bot_manager=self._bot_manager,
+                auto_seating_manager=self._auto_seating_manager,
+            )
+            self.inner_tabs.addTab(self.lobby_panel, "Lobby Scanner")
+
+            # Tab 3: HIVE Sessions
+            self.hive_sessions = HiveSessionsWidget(
+                bot_manager=self._bot_manager,
+                collusion_coordinator=self._collusion_coordinator,
+                auto_seating_manager=self._auto_seating_manager,
+            )
+            self.inner_tabs.addTab(self.hive_sessions, "HIVE Sessions")
+
+            # Tab 4: Session History
+            self.session_history = SessionHistoryWidget()
+            self.inner_tabs.addTab(self.session_history, "History")
+
+            root.addWidget(self.inner_tabs, stretch=1)
+
+        def _build_top_strip(self) -> QWidget:
+            strip = QWidget()
+            layout = QHBoxLayout(strip)
+            layout.setContentsMargins(0, 0, 0, 4)
+            layout.setSpacing(10)
+
+            # Title
+            title = QLabel("Bot Control")
+            title.setProperty("class", "header")
+            layout.addWidget(title)
+
+            layout.addSpacing(20)
+
+            # Account selector + toggle switch
+            layout.addWidget(QLabel("bot(s) —"))
+
+            self.single_bot_combo = QComboBox()
+            self.single_bot_combo.setMinimumWidth(160)
+            self.single_bot_combo.setPlaceholderText("Select account…")
+            layout.addWidget(self.single_bot_combo)
+
+            # Single combined Start/Stop toggle switch
+            layout.addSpacing(8)
+            self.all_toggle = BotToggleSwitch()
+            self.all_toggle.setToolTip(
+                "Toggle bot:\n  GREEN (LIVE) = bot running\n  RED (STOP) = bot stopped"
+            )
+            self.all_toggle.toggled.connect(self._on_toggle_all)
+            layout.addWidget(self.all_toggle)
+            layout.addSpacing(8)
+
+            layout.addStretch()
+
+            # HIVE quick-launch (3 bots)
+            layout.addWidget(QLabel("HIVE:"))
+            self.hive_combo1 = QComboBox()
+            self.hive_combo1.setPlaceholderText("Bot 1…")
+            self.hive_combo1.setMinimumWidth(110)
+            layout.addWidget(self.hive_combo1)
+
+            self.hive_combo2 = QComboBox()
+            self.hive_combo2.setPlaceholderText("Bot 2…")
+            self.hive_combo2.setMinimumWidth(110)
+            layout.addWidget(self.hive_combo2)
+
+            self.hive_combo3 = QComboBox()
+            self.hive_combo3.setPlaceholderText("Bot 3…")
+            self.hive_combo3.setMinimumWidth(110)
+            layout.addWidget(self.hive_combo3)
+
+            hive_btn = QPushButton("🤝  HIVE")
+            hive_btn.setProperty("class", "hive")
+            hive_btn.setMinimumWidth(80)
+            hive_btn.clicked.connect(self._on_start_hive)
+            layout.addWidget(hive_btn)
+
+            layout.addSpacing(12)
+
+            # Emergency Stop
+            self.emergency_btn = QPushButton("🚨 EMERGENCY STOP")
+            self.emergency_btn.setProperty("class", "danger")
+            self.emergency_btn.setMinimumWidth(190)
+            self.emergency_btn.setMinimumHeight(36)
+            self.emergency_btn.clicked.connect(self._on_emergency_stop)
+            self.emergency_btn.setToolTip("Ctrl+Shift+X")
+            layout.addWidget(self.emergency_btn)
+
+            return strip
+
+        def _build_active_bots_panel(self) -> QWidget:
+            panel = QWidget()
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(0, 6, 0, 0)
+            layout.setSpacing(6)
+
+            self.bots_table = QTableWidget()
+            self.bots_table.setColumnCount(9)
+            self.bots_table.setHorizontalHeaderLabels([
+                "№", "Nickname", "Status", "Table",
+                "Stack", "Edge", "Uptime", "Profile", "Action",
+            ])
+
+            hdr = self.bots_table.horizontalHeader()
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+            for i in (4, 5, 6, 7, 8):
+                hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+            self.bots_table.setSelectionBehavior(
+                QTableWidget.SelectionBehavior.SelectRows
+            )
+            self.bots_table.setEditTriggers(
+                QTableWidget.EditTrigger.NoEditTriggers
+            )
+            self.bots_table.setAlternatingRowColors(True)
+            self.bots_table.verticalHeader().setVisible(False)
+
+            layout.addWidget(self.bots_table, stretch=1)
+
+            # Counter
+            self.counter_label = QLabel("No bots")
+            self.counter_label.setStyleSheet(
+                f"color: {COLORS['text_secondary']}; font-size: 9pt; padding: 2px;"
+            )
+            layout.addWidget(self.counter_label)
+
+            return panel
+
+        # ── Refresh ────────────────────────────────────────────────────────────
+
+        def _refresh_bots_table(self) -> None:
+            if self._bot_manager is None:
+                return
+
+            bots = self._bot_manager.get_all_bots()
+            self.bots_table.setRowCount(len(bots))
+
+            for idx, bot in enumerate(bots):
+                num = QTableWidgetItem(str(idx + 1))
+                num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                num.setFlags(num.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.bots_table.setItem(idx, 0, num)
+
+                nick = bot.account.nickname if bot.account else "?"
+                self.bots_table.setItem(idx, 1, QTableWidgetItem(nick))
+
+                sc = _STATUS_COLORS.get(bot.status, COLORS["text_secondary"])
+                _status_labels = {
+                    "searching": "🔍 SEARCHING",
+                    "playing":   "🃏 PLAYING",
+                    "seated":    "💺 SEATED",
+                    "starting":  "⏳ STARTING",
+                    "idle":      "⏸ IDLE",
+                    "stopped":   "⏹ STOPPED",
+                    "error":     "❌ ERROR",
+                }
+                status_text = _status_labels.get(
+                    bot.status.value, bot.status.value.upper()
+                )
+                self.bots_table.setItem(idx, 2, _item(status_text, sc))
+
+                self.bots_table.setItem(
+                    idx, 3, QTableWidgetItem(bot.current_table or "—")
+                )
+                self.bots_table.setItem(
+                    idx, 4,
+                    _item(f"${bot.stack:.2f}" if bot.stack else "—",
+                          COLORS["accent_green"]),
+                )
+                self.bots_table.setItem(
+                    idx, 5,
+                    _item(
+                        f"{bot.collective_edge:.1f}%" if bot.collective_edge else "—",
+                        COLORS["accent_purple"],
+                    ),
+                )
+
+                uptime = int(bot.stats.uptime_seconds)
+                m, s = divmod(uptime, 60)
+                h, m = divmod(m, 60)
+                ut = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+                self.bots_table.setItem(idx, 6, QTableWidgetItem(ut))
+
+                self.bots_table.setItem(
+                    idx, 7, QTableWidgetItem(bot.profile_name or "default")
+                )
+
+                # Per-bot toggle switch
+                row_toggle = BotToggleSwitch()
+                row_toggle.set_state(bot.is_active(), animate=False)
+                row_toggle.setEnabled(bot.can_start() or bot.is_active())
+                row_toggle.setMinimumSize(80, 28)
+
+                def _make_toggle_cb(bid: str, tog: "BotToggleSwitch"):
+                    def _cb(on: bool) -> None:
+                        if on:
+                            self._start_bot(bid)
+                        else:
+                            self._stop_bot(bid)
+                    return _cb
+
+                row_toggle.toggled.connect(_make_toggle_cb(bot.bot_id, row_toggle))
+                self.bots_table.setCellWidget(idx, 8, row_toggle)
+
+            active = sum(1 for b in bots if b.is_active())
+            self.counter_label.setText(
+                f"Bots: {active} running / {len(bots)} total"
+            )
+
+        # ── Combo helpers ──────────────────────────────────────────────────────
+
+        def _update_combos(self) -> None:
+            # Show ALL accounts — not just captured ones (Start handles validation)
+            for combo in (
+                self.single_bot_combo,
+                self.hive_combo1,
+                self.hive_combo2,
+                self.hive_combo3,
+            ):
+                prev = combo.currentData()
+                combo.clear()
+                for acc in self.accounts:
+                    combo.addItem(acc.nickname, acc.account_id)
+                # Restore previous selection, or auto-select first item
+                restored = False
+                if prev:
+                    for i in range(combo.count()):
+                        if combo.itemData(i) == prev:
+                            combo.setCurrentIndex(i)
+                            restored = True
+                            break
+                if not restored and combo.count() > 0:
+                    combo.setCurrentIndex(0)
+
+        # ── Slots ─────────────────────────────────────────────────────────────
+
+        def _on_toggle_all(self, on: bool) -> None:
+            """Toggle selected bot on or off via the combined switch."""
+            if on:
+                self._on_start_single()
+            else:
+                self._on_stop_selected()
+
+        def _on_start_single(self) -> None:
+            aid = self.single_bot_combo.currentData()
+            if not aid:
+                QMessageBox.warning(self, "No Account",
+                    "Select an account from the dropdown first.")
+                self.all_toggle.set_state(False)
+                return
+            if self._bot_manager:
+                bot = self._bot_manager.get_bot_by_account(aid)
+                if bot and bot.is_active():
+                    return   # already running — toggle just reflects it
+            self._start_bot_by_account(aid)
+
+        def _on_stop_selected(self) -> None:
+            """Stop the bot for the currently selected account."""
+            if self._bot_manager is None:
+                return
+            aid = self.single_bot_combo.currentData()
+            if aid:
+                bot = self._bot_manager.get_bot_by_account(aid)
+                if bot and bot.is_active():
+                    self._bot_manager.stop_bot(bot.bot_id)
+                    return
+            # Fallback: stop all active bots
+            active = self._bot_manager.get_active_bots()
+            for bot in active:
+                self._bot_manager.stop_bot(bot.bot_id)
+
+        def _on_start_all(self) -> None:
+            if self._bot_manager is None:
+                return
+            idle = self._bot_manager.get_idle_bots()
+            if not idle:
+                QMessageBox.information(self, "No Bots", "No idle bots to start.")
+                return
+            reply = QMessageBox.question(
+                self, "Start All Bots",
+                f"Start {len(idle)} idle bot(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._bot_manager.start_all()
+
+        def _on_start_hive(self) -> None:
+            ids = [
+                self.hive_combo1.currentData(),
+                self.hive_combo2.currentData(),
+                self.hive_combo3.currentData(),
+            ]
+            if None in ids:
                 QMessageBox.warning(
-                    self,
-                    "Not Configured",
-                    f"Account {acc.nickname} needs Game Settings.\n\n"
-                    "Configure all 3 accounts first."
+                    self, "Incomplete", "Select all 3 bots for the HIVE group."
                 )
                 return
-        
-        # Confirm
-        reply = QMessageBox.question(
-            self,
-            "Start Collusion Group",
-            f"Start collusion group?\n\n"
-            f"Bots:\n"
-            f"  1. {accounts[0].nickname}\n"
-            f"  2. {accounts[1].nickname}\n"
-            f"  3. {accounts[2].nickname}\n\n"
-            f"⚠️ All 3 bots will:\n"
-            f"1. Navigate to game mode\n"
-            f"2. Find table with 1-3 players\n"
-            f"3. Coordinate 3vs1 strategy\n\n"
-            f"Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        
-        logger.info("=" * 60)
-        logger.info("STARTING COLLUSION GROUP")
-        logger.info(f"Bots: {[a.nickname for a in accounts]}")
-        logger.info("=" * 60)
-        
-        success = self.controller.start_collusion_group(accounts)
-        
-        if success:
-            for acc in accounts:
-                acc.status = AccountStatus.RUNNING
-                acc.bot_running = True
-            
-            QMessageBox.information(
+            if len(set(ids)) != 3:
+                QMessageBox.warning(
+                    self, "Duplicate", "Select 3 *different* accounts."
+                )
+                return
+
+            nicks = [
+                next((a.nickname for a in self.accounts if a.account_id == i), i)
+                for i in ids
+            ]
+
+            reply = QMessageBox.question(
                 self,
-                "Collusion Started",
-                f"Collusion group started!\n\n"
-                f"All 3 bots are now searching for suitable table.\n\n"
-                f"Check Logs tab for detailed progress."
+                "Start HIVE Group",
+                f"Start HIVE group?\n\n"
+                f"  Bot 1: {nicks[0]}\n"
+                f"  Bot 2: {nicks[1]}\n"
+                f"  Bot 3: {nicks[2]}\n\n"
+                "All 3 bots will coordinate on the same table (3vs1).\n"
+                "⚠  ILLEGAL in real poker — educational only.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
-        else:
-            QMessageBox.critical(
-                self,
-                "Start Failed",
-                "Failed to start collusion group.\n\n"
-                "Check logs for details."
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            for aid in ids:
+                self._start_bot_by_account(aid)
+
+            # Switch to HIVE Sessions tab so user sees activity
+            self.inner_tabs.setCurrentIndex(2)
+
+        def _on_stop_all(self) -> None:
+            if self._bot_manager is None:
+                return
+            active = self._bot_manager.get_active_bots()
+            if not active:
+                QMessageBox.information(
+                    self, "No Active Bots", "No bots are running."
+                )
+                return
+            reply = QMessageBox.question(
+                self, "Stop All",
+                f"Stop {len(active)} running bot(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
-    
-    def _on_stop_all(self):
-        """Stop all bots."""
-        if not self.controller.sessions:
-            QMessageBox.information(self, "No Active Bots", "No bots are currently running.")
-            return
-        
-        reply = QMessageBox.question(
-            self,
-            "Stop All Bots",
-            f"Stop all {len(self.controller.sessions)} active bots?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            self.controller.stop_all()
-            
-            # Update account statuses
-            for acc in self.accounts:
-                if acc.bot_running:
-                    acc.status = AccountStatus.READY
-                    acc.bot_running = False
-            
-            QMessageBox.information(self, "Stopped", "All bots have been stopped.")
-    
-    def _update_status(self):
-        """Update bot status table."""
-        sessions = self.controller.get_all_sessions()
-        
-        self.bots_table.setRowCount(len(sessions))
-        
-        for row, session in enumerate(sessions):
-            # Nickname
-            self.bots_table.setItem(row, 0, QTableWidgetItem(session['nickname']))
-            
-            # State
-            state_item = QTableWidgetItem(session['state'].upper())
-            if session['state'] == 'playing':
-                state_item.setForeground(QColor(0, 255, 0))
-            elif session['state'] == 'error':
-                state_item.setForeground(QColor(255, 0, 0))
+            if reply == QMessageBox.StandardButton.Yes:
+                self._bot_manager.stop_all()
+
+        def _on_emergency_stop(self) -> None:
+            self.emergency_stop_requested.emit()
+
+        def _start_bot(self, bot_id: str) -> None:
+            if self._bot_manager:
+                self._bot_manager.start_bot(bot_id)
+
+        def _stop_bot(self, bot_id: str) -> None:
+            if self._bot_manager:
+                self._bot_manager.stop_bot(bot_id)
+
+        def _start_bot_by_account(self, account_id: str) -> None:
+            if self._bot_manager is None:
+                return
+            bot = self._bot_manager.get_bot_by_account(account_id)
+            if bot:
+                self._bot_manager.start_bot(bot.bot_id)
             else:
-                state_item.setForeground(QColor(255, 255, 0))
-            self.bots_table.setItem(row, 1, state_item)
-            
-            # Table
-            table_text = session['table_id'] if session['table_id'] else "Searching..."
-            self.bots_table.setItem(row, 2, QTableWidgetItem(table_text))
-            
-            # Stack
-            stack_text = f"${session['stack']:.2f}" if session['stack'] > 0 else "-"
-            self.bots_table.setItem(row, 3, QTableWidgetItem(stack_text))
-            
-            # Uptime
-            uptime = int(session['uptime'])
-            minutes = uptime // 60
-            seconds = uptime % 60
-            uptime_text = f"{minutes}:{seconds:02d}"
-            self.bots_table.setItem(row, 4, QTableWidgetItem(uptime_text))
-            
-            # Actions
-            stop_btn = QPushButton("⏹️ Stop")
-            stop_btn.setStyleSheet("background-color: #AA0000; color: white;")
-            stop_btn.clicked.connect(lambda checked, aid=session['account_id']: self._stop_bot(aid))
-            self.bots_table.setCellWidget(row, 5, stop_btn)
-    
-    def _stop_bot(self, account_id: str):
-        """Stop specific bot."""
-        self.controller.stop_bot(account_id)
-        
-        # Update account status
-        account = next((a for a in self.accounts if a.account_id == account_id), None)
-        if account:
-            account.status = AccountStatus.READY
-            account.bot_running = False
-    
-    def _on_open_debug_viewer(self):
-        """Open debug viewer for selected bot."""
-        row = self.bots_table.currentRow()
-        if row < 0:
-            QMessageBox.information(self, "No Selection", "Please select a running bot from the table.")
-            return
-        
-        # Get account ID from table
-        account_id_item = self.bots_table.item(row, 0)
-        if not account_id_item:
-            return
-        
-        nickname = account_id_item.text()
-        
-        # Find account
-        account = next((a for a in self.accounts if a.nickname == nickname), None)
-        if not account:
-            QMessageBox.warning(self, "Error", "Account not found.")
-            return
-        
-        # Check if window is captured
-        if not account.window_info.is_captured():
-            QMessageBox.warning(
-                self,
-                "No Window",
-                "Bot window information not available."
-            )
-            return
-        
-        # Import debug viewer
-        try:
-            from launcher.ui.debug_viewer import DebugViewer
-        except ImportError:
-            QMessageBox.critical(
-                self,
-                "Not Available",
-                "Debug Viewer not available.\n\n"
-                "Install required packages:\n"
-                "pip install pillow opencv-python pytesseract"
-            )
-            return
-        
-        logger.info(f"Opening Debug Viewer for bot: {nickname}")
-        
-        # Create debug viewer
-        debug_viewer = DebugViewer(self)
-        
-        # Prefer HWND for direct capture, fallback to bbox
-        hwnd = account.window_info.hwnd
-        window_bbox = None
-        
-        if hwnd:
-            logger.info(f"Using direct window capture (HWND: {hwnd})")
-        else:
-            logger.warning("HWND not available, using screen region capture (may have issues)")
-            x, y, w, h = account.window_info.position
-            window_bbox = (x, y, w, h)
-        
-        # Show viewer and capture
-        debug_viewer.show()
-        debug_viewer.capture_and_detect(hwnd=hwnd, window_bbox=window_bbox)
-        
-        # Show info
-        QMessageBox.information(
-            self,
-            "Debug Viewer",
-            f"Debug Viewer opened for bot: {nickname}\n\n"
-            f"This window shows:\n"
-            f"• What the bot sees (captured screen)\n"
-            f"• Detected UI elements (yellow boxes)\n"
-            f"• Game mode buttons (green boxes)\n"
-            f"• Real-time detection info\n\n"
-            f"Enable 'Auto-Update' to see bot's vision in real-time!"
-        )
-
-
-# Educational example
-if __name__ == "__main__":
-    print("=" * 60)
-    print("Bots Control Tab - Educational Research")
-    print("=" * 60)
-    print()
-    print("Features:")
-    print("  - Start/stop individual bots")
-    print("  - Start collusion groups (3 bots)")
-    print("  - Monitor bot status")
-    print("  - Real-time updates")
-    print()
-    print("=" * 60)
+                account = next(
+                    (a for a in self.accounts if a.account_id == account_id), None
+                )
+                if account:
+                    from launcher.models.roi_config import ROIConfig
+                    bot = self._bot_manager.create_bot(
+                        account, ROIConfig(account_id=account_id)
+                    )
+                    self._bot_manager.start_bot(bot.bot_id)

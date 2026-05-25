@@ -22,12 +22,21 @@ class AccountStatus(str, Enum):
     DISCONNECTED = "disconnected"
 
 
+class PokerClient(str, Enum):
+    """Known poker room clients."""
+    COINPOKER   = "coinpoker"
+    POKERSTARS  = "pokerstars"
+    GGPOKER     = "ggpoker"
+    PARTYPOKER  = "partypoker"
+    UNKNOWN     = "unknown"
+
+
 class WindowType(str, Enum):
     """Window/browser type."""
     DESKTOP_CLIENT = "desktop_client"
-    BROWSER = "browser"
-    EMBEDDED = "embedded"
-    UNKNOWN = "unknown"
+    BROWSER        = "browser"
+    EMBEDDED       = "embedded"
+    UNKNOWN        = "unknown"
 
 
 @dataclass
@@ -79,9 +88,11 @@ class Account:
     status: AccountStatus = AccountStatus.IDLE
     window_info: WindowInfo = field(default_factory=WindowInfo)
     roi_configured: bool = False
+    poker_client: PokerClient = PokerClient.UNKNOWN
     bot_running: bool = False
     room: str = "pokerstars"
     notes: str = ""
+    balance: float = 0.0  # Available chip balance (for buy-in filtering)
     game_preferences: Optional['GamePreferences'] = None
     
     def to_dict(self) -> dict:
@@ -105,7 +116,8 @@ class Account:
             'roi_configured': self.roi_configured,
             'bot_running': self.bot_running,
             'room': self.room,
-            'notes': self.notes
+            'notes': self.notes,
+            'balance': self.balance
         }
         
         if self.game_preferences:
@@ -148,7 +160,8 @@ class Account:
             bot_running=data.get('bot_running', False),
             room=data.get('room', 'pokerstars'),
             notes=data.get('notes', ''),
-            game_preferences=game_prefs
+            balance=float(data.get('balance', 0.0)),
+            game_preferences=game_prefs,
         )
     
     def is_ready_to_run(self) -> bool:

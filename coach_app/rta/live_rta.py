@@ -22,6 +22,21 @@ from coach_app.schemas.meta import Meta
 from coach_app.schemas.poker import PokerGameState
 from coach_app.state.validate import StateValidationError, validate_poker_state
 
+# Auto-ROI detection (roadmap11 Phase 4)
+try:
+    from bridge.vision.anchor_detector import detect_roi, load_config as load_anchor_config
+    HAS_ANCHOR_DETECTOR = True
+except (ImportError, Exception):
+    HAS_ANCHOR_DETECTOR = False
+
+try:
+    from bridge.screen_capture import ScreenCapture
+    HAS_SCREEN_CAPTURE = True
+except (ImportError, Exception):
+    HAS_SCREEN_CAPTURE = False
+
+_AUTO_ROI_REFRESH_SECONDS = 30
+
 OutputMode = Literal["console", "overlay", "telegram"]
 
 # Keep a reference to the real Thread class for the main loop.
@@ -365,6 +380,69 @@ class LiveRTA:
 
         self.session_id = uuid.uuid4().hex
 
+        # Auto-ROI state (roadmap11 Phase 4)
+        self._auto_roi_zones: list[dict[str, Any]] = []
+        self._auto_roi_anchors: list[Any] = []
+        self._auto_roi_last_refresh: float = 0.0
+        self._auto_roi_hwnd: int | None = None
+
+    # -- Auto-ROI detection (roadmap11 Phase 4) ----------------------------
+
+    def _refresh_auto_roi(self, *, force: bool = False) -> None:
+        """Find poker window → detect anchors → compute ROI zones.
+
+        Called at startup and periodically (every 30 s) from ``_loop``.
+        If anchors are not found, keeps previous zones (or uses fallback).
+        """
+        if not HAS_ANCHOR_DETECTOR or not HAS_SCREEN_CAPTURE:
+            return
+
+        now = time.time()
+        if not force and (now - self._auto_roi_last_refresh) < _AUTO_ROI_REFRESH_SECONDS:
+            return
+
+        try:
+            sc = ScreenCapture()
+            hwnd = sc.auto_find_window(save_config=True)
+            if hwnd is None:
+                return
+
+            import cv2
+            import numpy as np
+
+            img = sc.capture(hwnd=hwnd)
+            if img is None:
+                return
+            if hasattr(img, "convert"):  # PIL → numpy BGR
+                img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+            cfg = load_anchor_config()
+            anchors, zones = detect_roi(img, config=cfg)
+
+            if anchors:
+                self._auto_roi_anchors = anchors
+                self._auto_roi_zones = [
+                    z.to_dict() if hasattr(z, "to_dict") else z for z in zones
+                ]
+                self._auto_roi_hwnd = hwnd
+                for a in anchors:
+                    logging.getLogger(__name__).info(
+                        "Anchor '%s' found at (%d, %d) conf=%.3f",
+                        a.name, a.x, a.y, a.confidence,
+                    )
+                logging.getLogger(__name__).info(
+                    "Auto-ROI refresh: %d anchors, %d zones", len(anchors), len(zones),
+                )
+            else:
+                logging.getLogger(__name__).debug(
+                    "Auto-ROI: no anchors found — keeping previous zones"
+                )
+
+            self._auto_roi_last_refresh = now
+
+        except Exception as exc:
+            logging.getLogger(__name__).warning("auto-ROI refresh error: %s", exc)
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
@@ -519,6 +597,9 @@ class LiveRTA:
         post_threshold = float(self.cfg.post_action_change.get("threshold", 18.0))
         prev_post_gray: dict[str, bytes | None] = {}
 
+        # Initial auto-ROI detection at startup (roadmap11 Phase 4)
+        self._refresh_auto_roi(force=True)
+
         while not self._stop.is_set():
             if self._control is not None:
                 self._control.process_events()
@@ -526,6 +607,9 @@ class LiveRTA:
             if not self._armed.is_set():
                 time.sleep(0.05)
                 continue
+
+            # Periodic auto-ROI refresh (every 30 s) — roadmap11 Phase 4
+            self._refresh_auto_roi()
 
             tables = self._detect_table_regions()
 

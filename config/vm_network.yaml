@@ -1,0 +1,146 @@
+# VM Network Isolation Configuration
+# One section per VM (bot). Each VM routes through a dedicated
+# residential proxy from a different geographic location.
+#
+# Residential proxy providers (recommended — NOT datacenter VPNs):
+#   - IPRoyal:    https://iproyal.com/residential-proxies/
+#   - Bright Data: https://brightdata.com/
+#   - Webshare:   https://www.webshare.io/ (cheaper option)
+#
+# SETUP CHECKLIST per VM:
+#   1. Create Hyper-V VM (Windows 10/11, 4GB RAM, 2 CPU, 60GB disk)
+#   2. Enable Enhanced Session Mode in Hyper-V settings
+#   3. Set VM network adapter to "Private Switch" (isolated from host)
+#   4. Install poker client inside VM
+#   5. Install vm_agent.py in VM (auto-starts via Task Scheduler)
+#   6. Configure system proxy inside VM to point at residential proxy
+#   7. Set VM timezone + locale to match proxy geolocation
+#   8. Create clean-state checkpoint: Checkpoint-VM -VMName "Bot1" -SnapshotName "clean_state"
+
+hyperv:
+  # Name of the internal Hyper-V virtual switch used by all bot VMs
+  switch_name: "BotPrivateSwitch"
+  # VM checkpoint name used for restore operations
+  checkpoint_name: "clean_state"
+
+vms:
+  # ── Bot 1 ──────────────────────────────────────────────────────────────────
+  Bot1:
+    # Hyper-V VM name (must match exactly)
+    vm_name: "Bot1"
+
+    # CoinPoker account associated with this VM
+    account_id: ""          # fill in your account_id here
+    account_label: "Account A"
+
+    # Agent port — vm_agent.py listens on this port inside the VM
+    # The host connects to 127.0.0.1:agent_port via Hyper-V forwarding
+    agent_port: 17001
+
+    # Residential proxy for this VM
+    proxy:
+      enabled: false        # set to true when proxy is configured
+      host: ""              # e.g. "proxy.iproyal.com"
+      port: 0               # e.g. 10000
+      user: ""
+      pass: ""
+      type: "http"          # http | socks5
+      # Geographic identity — must match proxy location
+      country: "RU"
+      timezone: "Europe/Moscow"
+      locale: "ru-RU"
+      city: "Moscow"
+
+    # VM hardware fingerprint (randomize to avoid linking accounts)
+    hardware:
+      mac_address: ""       # leave empty = auto-randomize on first run
+      bios_serial: ""
+      computer_name: "DESKTOP-BOT1"
+
+  # ── Bot 2 ──────────────────────────────────────────────────────────────────
+  Bot2:
+    vm_name: "Bot2"
+    account_id: ""
+    account_label: "Account B"
+    agent_port: 17002
+
+    proxy:
+      enabled: false
+      host: ""
+      port: 0
+      user: ""
+      pass: ""
+      type: "http"
+      country: "DE"
+      timezone: "Europe/Berlin"
+      locale: "de-DE"
+      city: "Berlin"
+
+    hardware:
+      mac_address: ""
+      bios_serial: ""
+      computer_name: "DESKTOP-BOT2"
+
+  # ── Bot 3 ──────────────────────────────────────────────────────────────────
+  Bot3:
+    vm_name: "Bot3"
+    account_id: ""
+    account_label: "Account C"
+    agent_port: 17003
+
+    proxy:
+      enabled: false
+      host: ""
+      port: 0
+      user: ""
+      pass: ""
+      type: "http"
+      country: "FR"
+      timezone: "Europe/Paris"
+      locale: "fr-FR"
+      city: "Paris"
+
+    hardware:
+      mac_address: ""
+      bios_serial: ""
+      computer_name: "DESKTOP-BOT3"
+
+# ── Anti-fingerprint settings (applied inside each VM) ───────────────────────
+fingerprint:
+  # Randomize MAC address on VM start
+  randomize_mac: true
+  # Set screen resolution to common value (avoid 800x600 VM default)
+  screen_resolution: "1920x1080"
+  # Disable VM-specific hardware strings in registry
+  remove_vm_strings: true
+  # CPUID spoofing (requires additional tool inside VM)
+  spoof_cpuid: false
+
+# ── Behavioral divergence settings ───────────────────────────────────────────
+# Each account must look like a DIFFERENT player to avoid linking
+behavioral_profiles:
+  Bot1:
+    # Timing profile (shark/rock/tag/lag/fish)
+    timing_profile: "tag"
+    # Average session length (hours) — vary between accounts
+    avg_session_hours: 2.5
+    # Preferred stakes range
+    preferred_stakes: "NL25"
+    # Playing style label (for internal tracking)
+    style: "tight-aggressive"
+    # Intentional loss rate (0.05 = fold winning hand 5% of the time)
+    intentional_loss_rate: 0.04
+
+  Bot2:
+    timing_profile: "lag"
+    avg_session_hours: 1.8
+    preferred_stakes: "NL25"
+    style: "loose-aggressive"
+    intentional_loss_rate: 0.06
+
+  Bot3:
+    timing_profile: "rock"
+    avg_session_hours: 3.2
+    preferred_stakes: "NL25"
+    style: "tight-passive"
+    intentional_loss_rate: 0.03
