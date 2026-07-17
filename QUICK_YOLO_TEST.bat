@@ -4,6 +4,6 @@ echo ======================================================================
 echo БЫСТРЫЙ ТЕСТ YOLO НА ИЗОБРАЖЕНИИ
 echo ======================================================================
 echo.
-python quick_yolo_test.py
+python tests/manual/quick_yolo_test.py
 echo.
 pause

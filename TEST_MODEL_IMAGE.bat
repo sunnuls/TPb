@@ -4,7 +4,7 @@ echo ======================================================================
 echo ТЕСТ МОДЕЛИ НА РЕАЛЬНОМ ИЗОБРАЖЕНИИ КАРТ
 echo ======================================================================
 echo.
-python test_model_with_image.py
+python tests/manual/test_model_with_image.py
 echo.
 if exist test_model_result.jpg (
     echo Открываю результат...

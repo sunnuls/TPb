@@ -10,6 +10,7 @@ import asyncio
 from launcher.auto_seating import AutoSeatingManager, HiveDeployment, DeploymentStatus
 from launcher.lobby_scanner import LobbyScanner, LobbyTable
 from launcher.bot_manager import BotManager
+from launcher.bot_instance import BotStatus
 from launcher.models.account import Account, WindowInfo, WindowType
 from launcher.models.roi_config import ROIConfig, ROIZone
 
@@ -175,10 +176,38 @@ class TestAutoSeatingManager:
         table = LobbyTable("t1", "Table 1")
         bots = bot_manager.get_idle_bots()
         
-        # Should return None (only 2 bots)
+        # Should return None (only 2 bots; default team size is exactly 3)
         deployment = await manager._deploy_hive_team(table, bots)
         
         assert deployment is None
+
+    @pytest.mark.asyncio
+    async def test_deploy_single_bot_stage1(self):
+        """Stage 1: allow deploying one bot when min_team_size=1."""
+        bot_manager = create_test_bot_manager(1)
+        lobby_scanner = LobbyScanner()
+        manager = AutoSeatingManager(
+            bot_manager=bot_manager,
+            lobby_scanner=lobby_scanner,
+            min_team_size=1,
+            max_team_size=3,
+            join_stagger_seconds=0.0,
+        )
+        table = LobbyTable(
+            table_id="solo",
+            table_name="Solo Table",
+            human_count=2,
+            players_seated=3,
+            max_seats=6,
+            room="pokerstars",
+        )
+        bots = bot_manager.get_idle_bots()
+        deployment = await manager._deploy_hive_team(table, bots)
+        assert deployment is not None
+        assert deployment.status == DeploymentStatus.COMPLETED
+        assert len(deployment.bot_ids) == 1
+        assert bots[0].current_table == table.table_name
+        assert bots[0].status == BotStatus.SEARCHING
     
     def test_get_active_deployments(self):
         """Test getting active deployments."""

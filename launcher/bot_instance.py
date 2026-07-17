@@ -60,6 +60,13 @@ try:
 except (ImportError, Exception):
     HAS_SCREEN_CAPTURE = False
 
+# Graceful import of ADB emulator backend (mobile emulator support)
+try:
+    from bridge.emulator.adb_backend import ADBBackend
+    HAS_ADB_BACKEND = True
+except (ImportError, Exception):
+    HAS_ADB_BACKEND = False
+
 try:
     from bridge.vision.anchor_detector import (
         find_anchors,
@@ -165,6 +172,11 @@ class BotInstance:
     _auto_roi_hwnd: Optional[int] = field(default=None, repr=False)
     _auto_roi_last_refresh: float = 0.0
     _screen_capture: Optional[Any] = field(default=None, repr=False)
+
+    # Mobile emulator backend (ADB) — used instead of Win32/HWND capture
+    # and RealActionExecutor/pyautogui when `account.window_info.emulator_serial`
+    # is set. See bridge/emulator/ for the backend implementation.
+    _emulator_backend: Optional[Any] = field(default=None, repr=False)
 
     # Internal state
     _running: bool = False
@@ -455,12 +467,41 @@ class BotInstance:
 
         return zones_list
 
+    # Sentinel HWND used when the bot targets a mobile emulator instead of
+    # a Win32 window — there is no real HWND, but downstream code
+    # (auto_detect_roi → _capture_window_image) only uses it as an opaque
+    # "do we have a target" flag, so any non-None value is safe here.
+    _EMULATOR_HWND_SENTINEL = -1
+
+    def _get_emulator_backend(self) -> Optional[Any]:
+        """Return the ADB backend for this bot, if it targets a mobile emulator.
+
+        Looks up ``account.window_info.emulator_serial``. Returns None
+        (and the caller falls back to the existing Win32/HWND path) when
+        no emulator serial is configured, so desktop bots are completely
+        unaffected by this code path.
+        """
+        if not HAS_ADB_BACKEND:
+            return None
+        serial = getattr(
+            getattr(self.account, "window_info", None), "emulator_serial", None
+        ) if self.account else None
+        if not serial:
+            return None
+        if self._emulator_backend is None or self._emulator_backend.serial != serial:
+            self._emulator_backend = ADBBackend(serial=serial)
+            logger.info("Bot %s: using ADB emulator backend (%s)", self.bot_id[:8], serial)
+        return self._emulator_backend
+
     def _auto_find_window_for_roi(
         self,
         keywords: Optional[list] = None,
         process_names: Optional[list] = None,
     ) -> Optional[int]:
-        """Find poker window HWND using ScreenCapture."""
+        """Find poker window HWND using ScreenCapture (or emulator sentinel)."""
+        if self._get_emulator_backend() is not None:
+            return self._EMULATOR_HWND_SENTINEL
+
         if not HAS_SCREEN_CAPTURE:
             logger.debug("ScreenCapture not available")
             return None
@@ -480,7 +521,17 @@ class BotInstance:
             return None
 
     def _capture_window_image(self, hwnd: int):
-        """Capture a screenshot from HWND and return as numpy array (or None)."""
+        """Capture a screenshot and return as numpy array (or None).
+
+        Routes through the ADB emulator backend when the bot targets a
+        mobile emulator (``hwnd`` is then the emulator sentinel, not a
+        real HWND); otherwise falls back to the existing Win32 HWND
+        capture path unchanged.
+        """
+        emulator_backend = self._get_emulator_backend()
+        if emulator_backend is not None:
+            return emulator_backend.capture()
+
         if self._screen_capture is None:
             return None
         try:
@@ -693,11 +744,17 @@ class BotInstance:
                 # Propagate to child extractors
                 for attr in ("card_extractor", "numeric_parser", "metadata_extractor"):
                     extractor = getattr(self._state_bridge, attr, None)
-                    if extractor is not None:
-                        try:
+                    if extractor is None:
+                        continue
+                    try:
+                        if hasattr(extractor, "set_dry_run"):
+                            extractor.set_dry_run(not live)
+                        else:
                             extractor.dry_run = not live
-                        except Exception:
-                            pass
+                        if hasattr(extractor, "fallback_to_simulation"):
+                            extractor.fallback_to_simulation = not live
+                    except Exception:
+                        pass
                 logger.info(
                     "Bot %s: StateBridge dry_run=%s", self.bot_id[:8], not live
                 )
@@ -1852,8 +1909,10 @@ class BotInstance:
                 except Exception:
                     pass
 
-        # Execute action
-        if self._action_executor is None:
+        # Execute action — either via Win32 RealActionExecutor (desktop) or
+        # via an ADB emulator backend (mobile). At least one must be ready.
+        emulator_backend = self._get_emulator_backend()
+        if self._action_executor is None and emulator_backend is None:
             return
         try:
             from bridge.action.real_executor import ActionCoordinates
@@ -1884,6 +1943,17 @@ class BotInstance:
             # For PS raise/bet: need to enter amount in bet field
             if room == "pokerstars" and action_str in ("raise", "bet") and amount:
                 await self._execute_ps_bet(action_str, xy, amount)
+            elif emulator_backend is not None:
+                clicked = emulator_backend.click(xy[0], xy[1])
+                if amount and action_str in ("raise", "bet"):
+                    amount_xy = self._get_action_coords("amount_field")
+                    if amount_xy:
+                        emulator_backend.click(amount_xy[0], amount_xy[1])
+                        emulator_backend.type_text(str(int(amount)))
+                logger.info(
+                    "Bot %s: executed %s via emulator (%s) → %s",
+                    self.bot_id[:8], action_str, emulator_backend.serial, clicked,
+                )
             else:
                 coords = ActionCoordinates(button_x=xy[0], button_y=xy[1])
                 result = self._action_executor.execute_action(
@@ -2238,7 +2308,16 @@ class BotInstance:
         try:
             from bridge.action.real_executor import ActionCoordinates
             fold_xy = self._get_action_coords("fold")
-            if fold_xy and self._action_executor:
+            if not fold_xy:
+                return
+            emulator_backend = self._get_emulator_backend()
+            if emulator_backend is not None:
+                emulator_backend.click(fold_xy[0], fold_xy[1])
+                logger.info(
+                    "Bot %s: emergency fold executed via emulator (%s)",
+                    self.bot_id[:8], emulator_backend.serial,
+                )
+            elif self._action_executor:
                 coords = ActionCoordinates(button_x=fold_xy[0], button_y=fold_xy[1])
                 self._action_executor.execute_action(
                     action_type="fold",

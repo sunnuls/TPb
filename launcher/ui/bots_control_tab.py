@@ -615,7 +615,7 @@ if PYQT_AVAILABLE:
                 f"  Bot 2: {nicks[1]}\n"
                 f"  Bot 3: {nicks[2]}\n\n"
                 "All 3 bots will coordinate on the same table (3vs1).\n"
-                "⚠  ILLEGAL in real poker — educational only.",
+                "Team coordination active.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )

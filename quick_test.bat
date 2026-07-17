@@ -12,6 +12,6 @@ python -c "import os; path='weights/best.pt'; print(f'Размер: {os.path.get
 
 echo.
 echo Тестируем на скриншоте...
-python test_current_model.py
+python tests/manual/test_current_model.py
 
 pause

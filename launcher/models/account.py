@@ -51,6 +51,10 @@ class WindowInfo:
         window_type: Type of window
         process_name: Process name
         position: Window position (x, y, width, height)
+        emulator_serial: ADB serial of a mobile emulator instance (e.g.
+            "127.0.0.1:5555"). When set, the bot captures/clicks via
+            `bridge.emulator.adb_backend.ADBBackend` instead of the
+            Win32/HWND path — see `launcher/emulator_manager.py`.
     """
     window_id: Optional[str] = None
     hwnd: Optional[int] = None  # Windows HWND for direct capture
@@ -58,10 +62,11 @@ class WindowInfo:
     window_type: WindowType = WindowType.UNKNOWN
     process_name: Optional[str] = None
     position: Optional[tuple] = None
+    emulator_serial: Optional[str] = None  # ADB serial for mobile emulator targets
     
     def is_captured(self) -> bool:
         """Check if window is captured."""
-        return self.window_id is not None or self.hwnd is not None
+        return self.window_id is not None or self.hwnd is not None or self.emulator_serial is not None
 
 
 @dataclass
@@ -111,7 +116,8 @@ class Account:
                 'window_title': self.window_info.window_title,
                 'window_type': self.window_info.window_type.value,
                 'process_name': self.window_info.process_name,
-                'position': self.window_info.position
+                'position': self.window_info.position,
+                'emulator_serial': self.window_info.emulator_serial,
             },
             'roi_configured': self.roi_configured,
             'bot_running': self.bot_running,
@@ -142,7 +148,8 @@ class Account:
             window_title=window_data.get('window_title'),
             window_type=WindowType(window_data.get('window_type', 'unknown')),
             process_name=window_data.get('process_name'),
-            position=window_data.get('position')
+            position=window_data.get('position'),
+            emulator_serial=window_data.get('emulator_serial'),
         )
         
         # Load game preferences if available

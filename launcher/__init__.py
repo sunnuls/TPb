@@ -1,13 +1,7 @@
 """
-Launcher Application - Educational Game Theory Research (Roadmap6).
+Launcher Application — HIVE multi-bot poker control panel.
 
-⚠️ CRITICAL ETHICAL WARNING:
-    This launcher manages coordinated bot operations (COLLUSION).
-    
-    EXTREMELY UNETHICAL and ILLEGAL in real poker.
-    Educational research only. NEVER use without explicit consent.
-
-Standalone GUI application for managing HIVE bot pool.
+Standalone GUI for managing the HIVE bot pool, accounts, vision, and team play.
 """
 
 __version__ = "1.0.0"

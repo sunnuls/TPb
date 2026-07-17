@@ -1,13 +1,7 @@
 """
 HIVE Launcher — Main Entry Point.
 
-⚠️ CRITICAL ETHICAL WARNING:
-    This launches a coordinated multi-bot collusion system.
-    EXTREMELY UNETHICAL and ILLEGAL in real-money poker.
-    Educational / game-theory research only.
-    NEVER use without the explicit consent of ALL participants.
-
-Standalone GUI application built on PyQt6.
+Multi-bot poker automation GUI (PyQt6).
 """
 
 import logging
@@ -47,11 +41,7 @@ def main() -> int:
         print("  pip install PyQt6")
         return 1
 
-    logger.critical(
-        "\n%s\nHIVE LAUNCHER  v2.0\n"
-        "Educational research only — collusion system — ILLEGAL in real poker\n%s",
-        "=" * 60, "=" * 60,
-    )
+    logger.info("HIVE Launcher v2.0 starting")
 
     from launcher.ui.theme import apply_dark_theme
     from launcher.ui.main_window import MainWindow
@@ -59,7 +49,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("HIVE Launcher")
     app.setApplicationVersion("2.0")
-    app.setOrganizationName("Educational Research")
+    app.setOrganizationName("HIVE")
 
     # Apply the unified dark theme (palette + QSS)
     apply_dark_theme(app)

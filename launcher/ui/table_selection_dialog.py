@@ -271,20 +271,19 @@ if PYQT_AVAILABLE:
             layout.addWidget(pref_group)
             
             # Collusion mode
-            collusion_group = QGroupBox("⚠️ COLLUSION MODE (Educational Research)")
-            collusion_group.setStyleSheet("QGroupBox { color: #FF6666; font-weight: bold; }")
+            collusion_group = QGroupBox("Team Coordination Mode")
+            collusion_group.setStyleSheet("QGroupBox { color: #88AADD; font-weight: bold; }")
             collusion_layout = QVBoxLayout(collusion_group)
             
-            self.collusion_mode = QCheckBox("Enable collusion mode (3-bot coordination)")
+            self.collusion_mode = QCheckBox("Enable team mode (3-bot coordination)")
             collusion_layout.addWidget(self.collusion_mode)
             
             collusion_info = QLabel(
-                "⚠️ When enabled, bots will coordinate to fill tables together.\n"
-                "Requires minimum empty seats for all 3 bots to join.\n\n"
-                "EDUCATIONAL RESEARCH ONLY - ILLEGAL IN REAL POKER."
+                "When enabled, bots coordinate to fill tables together.\n"
+                "Requires enough empty seats for the full team."
             )
             collusion_info.setWordWrap(True)
-            collusion_info.setStyleSheet("color: #FFAA00; font-size: 9pt;")
+            collusion_info.setStyleSheet("color: #AAB0C0; font-size: 9pt;")
             collusion_layout.addWidget(collusion_info)
             
             seats_layout = QHBoxLayout()

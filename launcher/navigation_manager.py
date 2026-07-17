@@ -871,7 +871,7 @@ class NavigationManager:
 
             # 3. Click "Играть" / "Play" button on the right panel
             #    For PS, after selecting a row the right panel shows "Играть" button
-            room = getattr(table, "room", "unknown")
+            room = (getattr(table, "room", "") or "unknown").lower()
             lets_play_x = getattr(table, "lets_play_btn_x", 0)
             ocr_clicked = False
 
@@ -910,7 +910,7 @@ class NavigationManager:
                 if image2 is not None:
                     self._click_lets_play(image2, win_x, win_y)
 
-            # ── PokerStars: handle buy-in dialog after "Играть" click ─────────
+            # ── Buy-in dialog (PS required; CP optional / short wait) ─────────
             if room == "pokerstars":
                 if self._check_stop():
                     logger.info("join_table: aborted before buy-in dialog (stop requested)")
@@ -919,6 +919,13 @@ class NavigationManager:
                 buyin_handled = await self.handle_buyin_dialog(hwnd, strategy="max")
                 logger.info("PS buy-in dialog handled=%s", buyin_handled)
                 await asyncio.sleep(2.0)
+            elif room == "coinpoker":
+                # Some CP flows show a buy-in before the table window; don't block long
+                if not self._check_stop():
+                    buyin_handled = await self.handle_buyin_dialog(
+                        hwnd, strategy="max", timeout=4.0
+                    )
+                    logger.info("CP buy-in dialog handled=%s", buyin_handled)
 
             await asyncio.sleep(1.5)
             image_final = self.capture()

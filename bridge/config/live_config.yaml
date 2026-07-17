@@ -1,5 +1,4 @@
-# Live Bridge Configuration (HCI Research Prototype)
-# Educational use only - for studying external desktop application interfaces
+# Live Bridge Configuration — HIVE poker client automation
 
 # SAFETY SETTINGS (Phase 0)
 safety:
@@ -114,6 +113,67 @@ roi_presets:
         width: 80
         height: 27
 
+  # Mobile emulator preset (ADBBackend, see bridge/emulator/adb_backend.py).
+  # ⚠️ PLACEHOLDER: coordinates below are illustrative for a typical
+  # portrait mobile poker layout, NOT calibrated against a real client.
+  # Recalibrate with tools/roi_calibrator.py against an actual emulator
+  # screenshot before LIVE use — same as pokerstars_6max above.
+  ggpoker_mobile:
+    "720x1280":
+      hero_cards:
+        x: 240
+        y: 980
+        width: 240
+        height: 90
+
+      board:
+        x: 140
+        y: 560
+        width: 440
+        height: 110
+
+      pot:
+        x: 300
+        y: 480
+        width: 120
+        height: 40
+
+      hero_stack:
+        x: 260
+        y: 1090
+        width: 200
+        height: 30
+
+      # Opponent stacks (6-max positions, portrait layout — top arc)
+      stacks:
+        - {name: "seat1", x: 60,  y: 160, width: 140, height: 30}
+        - {name: "seat2", x: 300, y: 100, width: 140, height: 30}
+        - {name: "seat3", x: 520, y: 160, width: 140, height: 30}
+        - {name: "seat4", x: 520, y: 340, width: 140, height: 30}
+        - {name: "seat5", x: 300, y: 400, width: 140, height: 30}
+        - {name: "seat6", x: 60,  y: 340, width: 140, height: 30}
+
+      # Action buttons — mobile clients usually stack fold/check-call/raise
+      # along the bottom edge, below the hero cards.
+      buttons:
+        fold:  {x: 60,  y: 1180, width: 180, height: 70}
+        check: {x: 270, y: 1180, width: 180, height: 70}
+        call:  {x: 270, y: 1180, width: 180, height: 70}
+        bet:   {x: 480, y: 1180, width: 180, height: 70}
+        raise: {x: 480, y: 1180, width: 180, height: 70}
+
+      amount_field:
+        x: 270
+        y: 1080
+        width: 180
+        height: 60
+
+      stage_indicator:
+        x: 300
+        y: 440
+        width: 120
+        height: 30
+
 # LOBBY SCANNER SETTINGS (Phase 3)
 lobby:
   scan_interval_seconds: 5
@@ -181,9 +241,8 @@ logging:
   console: true
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# EDUCATIONAL DISCLAIMER
+# OPERATOR NOTES
 disclaimer: |
-  This configuration is for HCI research prototype only.
-  Real-world use is PROHIBITED without proper authorization.
-  All operations default to DRY-RUN mode.
-  Educational use only - studying external application interfaces.
+  Configure safety.mode carefully (dry_run | safe | unsafe).
+  Kill switch and session limits remain available in all modes.
+  Operator is responsible for room rules and local regulations.

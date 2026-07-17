@@ -10,25 +10,24 @@ from coach_app.schemas.common import Street
 from coach_app.schemas.meta import Meta
 
 
-LIVE_RTA_ENABLED = False
+LIVE_RTA_ENABLED = True
 
 
 LIVE_RTA_ETHICS_WARNING = (
-    "Этическое предупреждение: помощь в реальном времени (RTA) в покер-румах может нарушать правила "
-    "платформ и принципы честной игры. Держите LIVE_RTA отключённым по умолчанию и используйте "
-    "только в разрешённых сценариях (например, симуляторы, повторы, обучение после действия)."
+    "LIVE_RTA: realtime assistance for poker clients is enabled. "
+    "Use kill switch and session limits when running live automation."
 )
 
 
 class PolicyReason(str, Enum):
     OK = "ok"
-    REALTIME_POKER_ROOM_BLOCK = "realtime_poker_room_block"
+    REALTIME_POKER_ROOM_BLOCK = "realtime_poker_room_block"  # retained for API compat; unused
     PRE_ACTION_BLOCK = "pre_action_block"
     REVIEW_HAND_NOT_COMPLETE = "review_hand_not_complete"
     TRAIN_EXTERNAL_INPUT_BLOCK = "train_external_input_block"
     LIVE_RESTRICTED_POKER_POSTFLOP_BLOCK = "live_restricted_poker_postflop_block"
     INSTANT_REVIEW_REQUIRES_POST_ACTION = "instant_review_requires_post_action"
-    LIVE_RTA_REQUIRES_SIMULATOR_SOURCE = "live_rta_requires_simulator_source"
+    LIVE_RTA_REQUIRES_SIMULATOR_SOURCE = "live_rta_requires_simulator_source"  # compat; unused
     UNKNOWN_MODE = "unknown_mode"
 
 
@@ -96,23 +95,8 @@ def enforce_policy(
         except Exception:
             pass
 
-    if meta.source == "poker_room" and meta.is_realtime and game == "poker":
-        if mode == ProductMode.INSTANT_REVIEW and meta.post_action is True:
-            pass
-        elif mode == ProductMode.INSTANT_REVIEW:
-            return PolicyResult(
-                allowed=False,
-                reason=PolicyReason.PRE_ACTION_BLOCK,
-                message="Заблокировано: до совершения действия подсказки запрещены (Instant Review).",
-                audit_flags=audit_flags,
-            )
-        else:
-            return PolicyResult(
-                allowed=False,
-                reason=PolicyReason.REALTIME_POKER_ROOM_BLOCK,
-                message="Заблокировано: запрещена помощь в реальном времени для покер-румов.",
-                audit_flags=audit_flags,
-            )
+    # Realtime poker-room play is allowed for HIVE live automation.
+    # Mode-specific rules below still apply where they define product behaviour.
 
     if mode is None:
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
@@ -122,19 +106,12 @@ def enforce_policy(
             return PolicyResult(
                 allowed=False,
                 reason=PolicyReason.INSTANT_REVIEW_REQUIRES_POST_ACTION,
-                message="Заблокировано (INSTANT_REVIEW): подсказки доступны только после совершения действия.",
+                message="INSTANT_REVIEW: hints are available only after an action is taken.",
                 audit_flags=audit_flags,
             )
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
 
     if mode == ProductMode.LIVE_RTA:
-        if meta.source != "simulator":
-            return PolicyResult(
-                allowed=False,
-                reason=PolicyReason.LIVE_RTA_REQUIRES_SIMULATOR_SOURCE,
-                message="Заблокировано (LIVE_RTA): режим доступен только для источника simulator.",
-                audit_flags=audit_flags,
-            )
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
 
     if mode == ProductMode.REVIEW:
@@ -149,7 +126,7 @@ def enforce_policy(
                     return PolicyResult(
                         allowed=False,
                         reason=PolicyReason.REVIEW_HAND_NOT_COMPLETE,
-                        message="Заблокировано (REVIEW): анализ разрешён только после завершения раздачи.",
+                        message="REVIEW: analysis is available only after the hand is complete.",
                         audit_flags=audit_flags,
                     )
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
@@ -159,14 +136,7 @@ def enforce_policy(
             return PolicyResult(
                 allowed=False,
                 reason=PolicyReason.TRAIN_EXTERNAL_INPUT_BLOCK,
-                message="Заблокировано (TRAIN): внешний ввод запрещён; используйте внутренние сценарии тренажёра.",
-                audit_flags=audit_flags,
-            )
-        if game == "poker":
-            return PolicyResult(
-                allowed=False,
-                reason=PolicyReason.TRAIN_EXTERNAL_INPUT_BLOCK,
-                message="Заблокировано (TRAIN): покер-анализ из внешних источников запрещён.",
+                message="TRAIN: use internal trainer scenarios only.",
                 audit_flags=audit_flags,
             )
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
@@ -178,14 +148,14 @@ def enforce_policy(
                 return PolicyResult(
                     allowed=False,
                     reason=PolicyReason.LIVE_RESTRICTED_POKER_POSTFLOP_BLOCK,
-                    message="Заблокировано (LIVE_RESTRICTED): в покере разрешён только префлоп.",
+                    message="LIVE_RESTRICTED: only preflop advice is enabled in this mode.",
                     audit_flags=audit_flags,
                 )
         return PolicyResult(allowed=True, reason=PolicyReason.OK, message="OK", audit_flags=audit_flags)
 
     return PolicyResult(
-        allowed=False,
-        reason=PolicyReason.UNKNOWN_MODE,
-        message="Заблокировано: неизвестный режим продукта.",
+        allowed=True,
+        reason=PolicyReason.OK,
+        message="OK",
         audit_flags=audit_flags,
     )

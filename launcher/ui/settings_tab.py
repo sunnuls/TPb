@@ -171,13 +171,12 @@ if PYQT_AVAILABLE:
 
             # Warning banner
             warn = QLabel(
-                "⚠️  LIVE mode sends REAL mouse clicks to CoinPoker.\n"
-                "     Only enable if you accept full responsibility.\n"
-                "     Educational research only — illegal in real poker."
+                "LIVE mode sends real mouse clicks / ADB taps to the poker client.\n"
+                "Only enable if you accept full responsibility for the session."
             )
             warn.setWordWrap(True)
             warn.setStyleSheet(
-                "background:#2c0a0a; color:#ff6b6b; border-radius:4px;"
+                "background:#1a2030; color:#c8d0e0; border-radius:4px;"
                 " padding:8px; font-size:9pt;"
             )
             layout.addWidget(warn)
@@ -352,26 +351,26 @@ if PYQT_AVAILABLE:
             layout.setSpacing(10)
 
             warning = QLabel(
-                "⚠  The settings below are ILLEGAL in real poker.\n"
-                "   Enable only for educational game-theory research."
+                "Team coordination settings:\n"
+                "card sharing and multi-bot strategies."
             )
             warning.setWordWrap(True)
             warning.setStyleSheet(
-                f"color: {COLORS['accent_orange']}; "
-                f"background-color: #2a1f00; "
-                f"border: 1px solid {COLORS['accent_orange']}; "
+                f"color: {COLORS['text_secondary']}; "
+                f"background-color: {COLORS['bg_secondary']}; "
+                f"border: 1px solid {COLORS['border']}; "
                 f"border-radius: 4px; padding: 8px;"
             )
             layout.addWidget(warning)
 
-            self.collusion_check = QCheckBox("Enable card sharing (ILLEGAL)")
+            self.collusion_check = QCheckBox("Enable card sharing (team mode)")
             self.collusion_check.setStyleSheet(
-                f"color: {COLORS['accent_red']}; font-weight: bold;"
+                f"color: {COLORS['text_primary']}; font-weight: bold;"
             )
             self.collusion_check.stateChanged.connect(self._on_collusion_toggled)
             layout.addWidget(self.collusion_check)
 
-            self.manipulation_check = QCheckBox("Enable 3vs1 manipulation (UNETHICAL)")
+            self.manipulation_check = QCheckBox("Enable 3vs1 team strategies")
             self.manipulation_check.setStyleSheet(
                 f"color: {COLORS['accent_red']};"
             )
@@ -570,15 +569,13 @@ if PYQT_AVAILABLE:
             if self._block_signals:
                 return
             if state == 2:   # Qt.CheckState.Checked
-                reply = QMessageBox.critical(
+                reply = QMessageBox.question(
                     self,
-                    "CRITICAL WARNING",
-                    "You are enabling CARD SHARING (COLLUSION).\n\n"
-                    "This is ILLEGAL in real poker.\n"
-                    "EXTREMELY UNETHICAL.\n\n"
-                    "Enable ONLY for educational research.",
+                    "Enable team card sharing",
+                    "Enable shared hole cards between bots in a team?\n\n"
+                    "Bots will exchange cards and make coordinated decisions.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
                 )
                 if reply != QMessageBox.StandardButton.Yes:
                     self._block_signals = True

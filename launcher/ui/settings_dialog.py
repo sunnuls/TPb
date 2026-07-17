@@ -200,7 +200,7 @@ if PYQT_AVAILABLE:
             self.manipulation_check.stateChanged.connect(self._on_custom_change)
             advanced_layout.addWidget(self.manipulation_check)
             
-            self.collusion_check = QCheckBox("Enable card sharing (ILLEGAL)")
+            self.collusion_check = QCheckBox("Enable card sharing (team mode)")
             self.collusion_check.setStyleSheet("color: #ff3333; font-weight: bold;")
             self.collusion_check.stateChanged.connect(self._on_custom_change)
             advanced_layout.addWidget(self.collusion_check)
@@ -273,15 +273,13 @@ if PYQT_AVAILABLE:
             """Save settings."""
             # Show warning if dangerous settings enabled
             if self.manipulation_check.isChecked() or self.collusion_check.isChecked():
-                reply = QMessageBox.critical(
+                reply = QMessageBox.question(
                     self,
-                    "CRITICAL WARNING",
-                    "You are enabling COLLUSION and/or MANIPULATION.\n\n"
-                    "This is ILLEGAL in real poker.\n"
-                    "EXTREMELY UNETHICAL.\n\n"
-                    "Continue only for educational research.",
+                    "Confirm team settings",
+                    "You are enabling team card sharing and/or team strategies.\n\n"
+                    "Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
+                    QMessageBox.StandardButton.Yes
                 )
                 
                 if reply != QMessageBox.StandardButton.Yes:

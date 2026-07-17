@@ -1,15 +1,13 @@
 # TPb — HIVE: Coordinated Multi-Agent Poker Bot Network
 
-> **Educational research prototype** for studying coordinated AI agents in simulated game theory environments.
-> Not intended for real-money play. For academic and research purposes only.
+> Multi-bot poker automation platform: vision, seating, card sharing, and team play.
 
 ---
 
 ## What is HIVE?
 
-HIVE is an autonomous multi-bot poker system that coordinates a network of AI agents to play together at the same table. The system demonstrates advanced concepts in multi-agent coordination, information sharing, and collaborative decision-making within adversarial game theory environments.
-
-**Core concept:** 3 AI bots join a table with 1–3 human players, share hole cards in real time, compute collective equity, and execute coordinated manipulation strategies (3vs1).
+HIVE coordinates a network of AI agents to play at the same table.
+**Core concept:** several bots join a table, share hole cards in real time, compute collective equity, and execute coordinated strategies.
 
 ### Key capabilities
 
@@ -17,16 +15,16 @@ HIVE is an autonomous multi-bot poker system that coordinates a network of AI ag
 - **Multi-Bot Pool** — manage 5+ bot instances simultaneously with per-bot profiles (shark, rock, tag, lag, fish)
 - **Auto Window Discovery** — find poker client windows by title/process, capture via Win32 API
 - **Auto ROI Detection** — template matching (cv2.matchTemplate) to auto-calibrate screen zones without manual input
-- **Lobby Scanner** — OCR-based lobby parsing to find tables with 1–3 human players and free seats
-- **Auto Table Fill** — automatically seat 3 bots at target tables matching criteria
+- **Lobby Scanner** — OCR-based lobby parsing to find suitable tables
+- **Auto Table Fill** — seat bots at target tables matching criteria
 - **Account Binding** — bind bot IDs to poker room nicknames and window handles with health checks
 - **Real-Time Card Sharing** — encrypted hole card exchange between bots via CentralHub (WebSocket)
-- **Collusion Engine** — auto-activation when 3 bots are seated; compute collective equity from 6 known cards
-- **3vs1 Manipulation** — street-aware aggression escalation, coordinated traps, isolation plays, squeeze strategies
-- **Action Execution** — humanized mouse/keyboard with Bezier curves, behavioral variance, anti-pattern detection
-- **Vision Pipeline** — template matching + OCR (Tesseract/EasyOCR) + optional YOLOv8 for card/UI detection
+- **Team Engine** — collective equity from known cards; street-aware team strategies
+- **Action Execution** — humanized mouse/keyboard / ADB with timing variance
+- **Vision Pipeline** — template matching + OCR + optional YOLOv8 for card/UI detection
+- **Emulator support** — ADB capture/input for Android emulators (MuMu / LDPlayer)
 
----
+See `docs/STAGES.md` for the delivery roadmap and `docs/POLICY.md` for operating modes.
 
 ## Architecture
 
@@ -227,11 +225,19 @@ pytest tests/ -v             # integration tests
 
 | Guide | Description |
 |-------|-------------|
+| [`ROADMAP.md`](ROADMAP.md) | Active development roadmap |
+| [`docs/guides/START_HERE.md`](docs/guides/START_HERE.md) | Quick start for new users |
+| [`docs/guides/README_LAUNCHER.md`](docs/guides/README_LAUNCHER.md) | HIVE Launcher overview |
+| [`docs/guides/QUICK_START_LAUNCHER.md`](docs/guides/QUICK_START_LAUNCHER.md) | Launcher setup |
+| [`docs/guides/OCR_TESTING_GUIDE.md`](docs/guides/OCR_TESTING_GUIDE.md) | OCR & vision testing |
+| [`docs/roadmaps/`](docs/roadmaps/) | Feature roadmaps & specs |
 | [`docs/POLICY.md`](docs/POLICY.md) | Research use policy & ethical guidelines |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture overview |
 | [`docs/VISION_SETUP.md`](docs/VISION_SETUP.md) | Vision pipeline setup |
 | [`docs/BOT_PROFILES.md`](docs/BOT_PROFILES.md) | Bot profiles & A/B testing |
 | [`docs/API_HUB_DECISION.md`](docs/API_HUB_DECISION.md) | CentralHub & Decision engine API |
+
+Manual test scripts (OCR, YOLO, model checks) live in [`tests/manual/`](tests/manual/).
 
 ---
 

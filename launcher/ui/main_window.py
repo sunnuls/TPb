@@ -114,9 +114,13 @@ if PYQT6_AVAILABLE:
 
             # Optional HIVE backend
             self.lobby_scanner        = LobbyScanner()          if _HAS_AUTO_SEATING else None
+            # Stage 1: allow 1 bot; Stage 2 HIVE still supports up to 3
             self.auto_seating_manager = AutoSeatingManager(
                 bot_manager=self.bot_manager,
                 lobby_scanner=self.lobby_scanner,
+                min_team_size=1,
+                max_team_size=3,
+                join_stagger_seconds=8.0,
             ) if _HAS_AUTO_SEATING else None
             self.collusion_coordinator = (
                 CollusionCoordinator(enable_real_actions=False)
@@ -170,14 +174,11 @@ if PYQT6_AVAILABLE:
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
 
-            # ── Warning banner ─────────────────────────────────────────────
-            banner = QLabel(
-                "⚠  EDUCATIONAL RESEARCH ONLY — COLLUSION SYSTEM — "
-                "ILLEGAL IN REAL POKER  ⚠"
-            )
+            # ── Status banner ─────────────────────────────────────────────
+            banner = QLabel("HIVE — Multi-Bot Poker Network")
             banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
             banner.setStyleSheet(
-                "background-color: #8b0000; color: #ffd0d0; "
+                "background-color: #1e2433; color: #c8d0e0; "
                 "font-size: 11pt; font-weight: bold; "
                 "padding: 6px; letter-spacing: 0.5px;"
             )
@@ -641,36 +642,16 @@ if PYQT6_AVAILABLE:
         # ── Startup dialog ────────────────────────────────────────────────────
 
         def _show_startup_warning(self) -> None:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("Educational Research Warning")
-            msg.setText("HIVE Launcher — Coordinated Collusion System")
-            msg.setInformativeText(
-                "This software implements COORDINATED COLLUSION between bots.\n\n"
-                "It is ILLEGAL in real-money poker.\n"
-                "It is EXTREMELY UNETHICAL.\n\n"
-                "It is intended ONLY for academic game-theory research\n"
-                "in controlled, consensual environments.\n\n"
-                "Press OK only if you understand and accept\n"
-                "the ethical and legal implications."
-            )
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
-            )
-            msg.setDefaultButton(QMessageBox.StandardButton.Cancel)
-
-            if msg.exec() == QMessageBox.StandardButton.Cancel:
-                sys.exit(0)
+            """Optional welcome dialog — no longer blocks launch."""
+            return
 
         def _show_about(self) -> None:
             QMessageBox.about(
                 self,
                 "About HIVE Launcher",
                 "HIVE Launcher  v2.0\n\n"
-                "Multi-bot coordination & vision platform.\n"
-                "Educational game-theory research only.\n\n"
-                "Tabs: Accounts · Live View · Bot Control · Settings · Logs\n\n"
-                "⚠  ILLEGAL in real poker — educational use only.",
+                "Multi-bot poker coordination & vision platform.\n\n"
+                "Tabs: Accounts · Live View · Bot Control · Settings · Logs",
             )
 
         # ── Close ─────────────────────────────────────────────────────────────

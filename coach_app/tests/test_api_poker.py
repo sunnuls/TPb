@@ -101,7 +101,7 @@ def test_when_pot_odds_unknown_explanation_does_not_mention_it():
     assert "Pot odds" not in data["explanation"]
 
 
-def test_policy_blocks_realtime_poker_room():
+def test_policy_allows_realtime_poker_room():
     app = create_app()
     client = TestClient(app)
 
@@ -112,9 +112,8 @@ def test_policy_blocks_realtime_poker_room():
             "meta": {"source": "poker_room", "is_realtime": True},
         },
     )
-    assert resp.status_code == 403, resp.text
-    detail = resp.json()["detail"]
-    assert detail["reason"] == "realtime_poker_room_block"
+    assert resp.status_code == 200, resp.text
+    assert "decision" in resp.json()
 
 
 def test_policy_review_requires_completed_hand_when_mode_explicit():

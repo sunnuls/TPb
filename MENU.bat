@@ -76,16 +76,16 @@ goto MENU
 echo.
 echo Документация:
 echo.
-echo   README_LAUNCHER.md        - Обзор
-echo   QUICK_START_AUTO_NAV.md   - Быстрый старт
-echo   COMPLETE_GUIDE.md         - Полное руководство
-echo   FINAL_SUMMARY.md          - Итоговая сводка
+echo   docs/guides/README_LAUNCHER.md   - Обзор
+echo   docs/guides/QUICK_START_AUTO_NAV.md - Быстрый старт
+echo   docs/guides/START_HERE.md          - Начните здесь
+echo   docs/archive/COMPLETE_GUIDE.md     - Полное руководство
 echo.
-echo Открыть README_LAUNCHER.md? (Y/N)
+echo Открыть README_LAUNCHER? (Y/N)
 set /p open_docs="Ваш выбор: "
 
 if /i "%open_docs%"=="Y" (
-    start README_LAUNCHER.md
+    start docs\guides\README_LAUNCHER.md
 )
 echo.
 pause

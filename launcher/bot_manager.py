@@ -57,10 +57,6 @@ class BotManager:
         self._collusion_coordinator = None  # set via set_collusion_coordinator()
         
         logger.info("Bot manager initialized")
-        logger.warning(
-            "CRITICAL: Bot manager for COORDINATED COLLUSION. "
-            "Educational research only. ILLEGAL in real poker."
-        )
     
     def create_bot(
         self,

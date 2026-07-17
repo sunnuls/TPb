@@ -86,19 +86,19 @@ class StateBridge:
         
         self.roi_manager = ROIManager()
         
+        # Live mode: never invent pot/stacks/cards — fail closed instead
+        _fb = bool(dry_run)
         self.card_extractor = CardExtractor(
             dry_run=dry_run,
-            fallback_to_simulation=True
+            fallback_to_simulation=_fb,
         )
-        
         self.numeric_parser = NumericParser(
             dry_run=dry_run,
-            fallback_to_simulation=True
+            fallback_to_simulation=_fb,
         )
-        
         self.metadata_extractor = MetadataExtractor(
             dry_run=dry_run,
-            fallback_to_simulation=True
+            fallback_to_simulation=_fb,
         )
         
         # Statistics
@@ -146,11 +146,17 @@ class StateBridge:
                     self.dry_run, new_dry, _fw.config.mode,
                 )
                 self.dry_run = new_dry
-                # Sync child extractors as well
+                # Sync child extractors; live = no simulation fallback
                 for attr in ("card_extractor", "numeric_parser", "metadata_extractor"):
                     child = getattr(self, attr, None)
-                    if child is not None:
+                    if child is None:
+                        continue
+                    if hasattr(child, "set_dry_run"):
+                        child.set_dry_run(new_dry)
+                    else:
                         child.dry_run = new_dry
+                    if hasattr(child, "fallback_to_simulation"):
+                        child.fallback_to_simulation = new_dry
         except Exception:
             pass
 
@@ -173,30 +179,19 @@ class StateBridge:
                     return state
 
             # Step 3: Generic path (DRY-RUN and CoinPoker)
-            # In live mode with no screenshot, force dry_run simulation to avoid
-            # cascading OpenCV errors from passing None to extractors
-            effective_dry = self.dry_run or (screenshot is None)
-            if effective_dry and not self.dry_run:
-                logger.debug("No screenshot in live mode — using simulation fallback")
+            # Live mode: fail closed if capture failed — never invent pot/stacks
+            if not self.dry_run and screenshot is None:
+                logger.warning(
+                    "StateBridge: no screenshot in LIVE mode — returning None"
+                )
+                return None
 
             roi_dict = self._load_rois(room, resolution)
-            # Temporarily force dry_run on child extractors when screenshot is unavailable
-            _saved = (self.card_extractor.dry_run, self.numeric_parser.dry_run,
-                      self.metadata_extractor.dry_run)
-            if effective_dry:
-                self.card_extractor.dry_run = True
-                self.numeric_parser.dry_run = True
-                self.metadata_extractor.dry_run = True
-            try:
-                cards = self._extract_cards(screenshot, roi_dict)
-                numeric = self._extract_numeric(screenshot, roi_dict)
-                metadata = self._extract_metadata(
-                    screenshot, roi_dict, len(cards['board'])
-                )
-            finally:
-                # Restore original dry_run state
-                self.card_extractor.dry_run, self.numeric_parser.dry_run, \
-                    self.metadata_extractor.dry_run = _saved
+            cards = self._extract_cards(screenshot, roi_dict)
+            numeric = self._extract_numeric(screenshot, roi_dict)
+            metadata = self._extract_metadata(
+                screenshot, roi_dict, len(cards["board"])
+            )
             state = self._assemble_table_state(
                 table_id=table_id,
                 cards=cards,

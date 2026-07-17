@@ -444,45 +444,46 @@ if PYQT_AVAILABLE:
                 return
 
             idle = self._bot_manager.get_idle_bots()
-            if len(idle) < 3:
+            asm = self._auto_seating_manager
+            min_n = getattr(asm, "min_team_size", 1) if asm else 1
+            max_n = getattr(asm, "max_team_size", 3) if asm else 3
+            if len(idle) < min_n:
                 QMessageBox.warning(
                     self,
                     "Not Enough Bots",
-                    f"Need 3 idle bots — only {len(idle)} available.\n\n"
+                    f"Need at least {min_n} idle bot(s) — only {len(idle)} available.\n\n"
                     "Add accounts and configure ROI first.",
                 )
                 return
 
+            team = idle[:max_n]
             reply = QMessageBox.question(
                 self,
                 "Deploy HIVE",
-                f"Deploy HIVE team to:\n\n"
+                f"Deploy to:\n\n"
                 f"  Table: {table.table_name}\n"
                 f"  Stakes: {table.stakes}\n"
                 f"  Humans: {table.human_count}\n"
                 f"  Open seats: {table.seats_available()}\n"
                 f"  Priority: {table.priority_score():.0f}/100\n\n"
-                f"3 idle bots will be deployed.\n"
-                f"⚠  ILLEGAL in real poker — educational only.",
+                f"{len(team)} idle bot(s) will be deployed.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-            logger.critical(
-                "HIVE DEPLOY requested → table=%s  humans=%d",
-                table.table_name, table.human_count,
+            logger.info(
+                "HIVE DEPLOY requested → table=%s  humans=%d  bots=%d",
+                table.table_name, table.human_count, len(team),
             )
 
             # If we have a real auto_seating_manager, use it
-            if self._auto_seating_manager:
+            if asm:
                 import asyncio
 
                 async def _do_deploy():
-                    await self._auto_seating_manager._deploy_hive_team(
-                        table, idle[:3]
-                    )
+                    await asm._deploy_hive_team(table, team)
 
                 try:
                     loop = asyncio.get_event_loop()
@@ -494,8 +495,7 @@ if PYQT_AVAILABLE:
                     logger.error("Deploy error: %s", exc)
 
             else:
-                # Fallback: manually assign table to 3 bots
-                for bot in idle[:3]:
+                for bot in team:
                     bot.current_table = table.table_name
                     logger.info(
                         "Bot %s assigned to %s",

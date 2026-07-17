@@ -221,10 +221,7 @@ class LobbyScanner:
         self._last_snapshot: Optional[LobbySnapshot] = None
         
         logger.info("Lobby scanner initialized")
-        logger.warning(
-            "CRITICAL: Lobby scanner for COORDINATED COLLUSION. "
-            "Educational research only. ILLEGAL in real poker."
-        )
+        logger.info("Lobby scanner initialized")
     
     def scan_lobby(self) -> LobbySnapshot:
         """Scan lobby — try real capture first, fall back to cache."""
@@ -837,6 +834,7 @@ class LobbyScanner:
                     hands_per_hour=60,
                     row_y_coordinate=abs_y,
                     lets_play_btn_x=int(img_w * 0.85),  # typical button column
+                    room="coinpoker",
                 ))
 
             return tables
@@ -998,6 +996,7 @@ class LobbyScanner:
                 hands_per_hour=60,
                 row_y_coordinate=row_y,
                 lets_play_btn_x=int(img_w * 0.92),
+                room="coinpoker",
             ))
 
             logger.debug(

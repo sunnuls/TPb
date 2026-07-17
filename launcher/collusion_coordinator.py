@@ -114,10 +114,6 @@ class CollusionCoordinator:
         self._initialize_components()
         
         logger.info("Collusion coordinator initialized")
-        logger.critical(
-            "CRITICAL: Collusion coordinator for COORDINATED COLLUSION. "
-            "Educational research only. ILLEGAL in real poker."
-        )
     
     def _initialize_components(self):
         """Initialize collusion components."""

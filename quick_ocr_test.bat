@@ -100,7 +100,7 @@ echo ============================================
 echo.
 
 REM Запуск теста
-python test_real_ocr.py "%SCREENSHOT%" "%CONFIG%"
+python tests/manual/test_real_ocr.py "%SCREENSHOT%" "%CONFIG%"
 
 echo.
 echo ============================================
@@ -110,6 +110,6 @@ echo.
 echo 📁 Проверьте файл: zones_visualization.png
 echo    Убедитесь, что зоны правильно расположены!
 echo.
-echo 💡 Подробная инструкция: OCR_TESTING_GUIDE.md
+echo 💡 Подробная инструкция: docs/guides/OCR_TESTING_GUIDE.md
 echo.
 pause

@@ -35,14 +35,40 @@ logs/
 coverage/
 .nyc_output/
 
-# Python (legacy)
+# Python
 __pycache__/
 *.py[cod]
 *.so
 .Python
 venv/
+.venv/
 env/
 *.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+
+# ML models & training data (download locally, do not commit)
+weights/
+*.pt
+Playing Cards*/
+Playing-Cards-Detection-master/
+online_poker_training/
+
+# Debug & runtime artifacts
+bridge/debug_screenshots/
+debug_*.png
+auto_roi_debug.png
+cards_detected_debug.png
+yolo_test_debug.png
+zones_visualization.png
+test_model_result.jpg
+
+# Local session state
+config/active_window.json
+config/session_history.json
+config/emulator_bindings.json
+config_demo_temp/
 
 # Database
 *.db
@@ -52,8 +78,14 @@ env/
 # Temp
 tmp/
 temp/
+tools/_*.png
+tools/_*.txt
+tools/_*.xml
+tools/_*.py
+tools/_mumu_*
+tools/_ps_*
 
-# Simulation data (research purposes)
+# Simulation data
 sim_logs/
 simulation_logs/
 *.sim

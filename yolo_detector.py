@@ -61,10 +61,9 @@ class YoloCardDetector:
             # СНАЧАЛА проверяем локальные модели (быстрее!)
             import os
             local_models = [
-                "yolov8s_playing_cards.pt",  # Обученная модель от Playing-Cards-Detection
-                "weights/best.pt",  # Может быть обученная модель!
+                "yolov8s_playing_cards.pt",
+                "weights/best.pt",
                 "weights/yolov8s_playing_cards.pt",
-                "Playing-Cards-Detection-master/Playing-Cards-Detection-master/yolov8s_playing_cards.pt",
                 "weights/train-yolov8-object-detection-on-custom-dataset.pt",
                 "playing_cards.pt",
                 "cards_yolov8.pt",
