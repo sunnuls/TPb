@@ -4,12 +4,22 @@ Tests for BotInstance - Phase 2.
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 """
 
+import time
+
 import pytest
-import asyncio
 
 from launcher.bot_instance import BotInstance, BotStatus, BotStatistics
 from launcher.models.account import Account, WindowInfo, WindowType
 from launcher.models.roi_config import ROIConfig, ROIZone
+
+
+def _wait_until(pred, timeout=5.0, interval=0.1, msg="condition not met"):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return
+        time.sleep(interval)
+    assert pred(), msg
 
 
 class TestBotStatistics:
@@ -129,8 +139,7 @@ class TestBotInstance:
         bot.status = BotStatus.PLAYING
         assert not bot.can_start()
     
-    @pytest.mark.asyncio
-    async def test_start_bot(self):
+    def test_start_bot(self):
         """Test starting bot."""
         # Create ready account
         account = Account(nickname="TestBot", room="pokerstars")
@@ -146,21 +155,17 @@ class TestBotInstance:
         bot = BotInstance(account=account, roi_config=roi)
         
         # Start bot
-        await bot.start()
-        
-        # Wait for initialization
-        await asyncio.sleep(0.1)
-        
-        # Check status
-        assert bot.status in [BotStatus.STARTING, BotStatus.SEARCHING]
-        assert bot._running
+        bot.start()
+        _wait_until(
+            lambda: bot.status in [BotStatus.STARTING, BotStatus.SEARCHING] and bot._running,
+            msg='bot did not reach STARTING/SEARCHING',
+        )
         assert bot.start_time is not None
-        
-        # Stop bot
-        await bot.stop()
+        bot.stop()
+        _wait_until(lambda: bot.status == BotStatus.STOPPED and not bot._running,
+                    msg='bot did not stop')
     
-    @pytest.mark.asyncio
-    async def test_stop_bot(self):
+    def test_stop_bot(self):
         """Test stopping bot."""
         account = Account(nickname="TestBot", room="pokerstars")
         account.window_info = WindowInfo(
@@ -173,14 +178,11 @@ class TestBotInstance:
         roi = ROIConfig(account_id=account.account_id)
         bot = BotInstance(account=account, roi_config=roi)
         
-        # Start and stop
-        await bot.start()
-        await asyncio.sleep(0.1)
-        await bot.stop()
-        
-        # Check status
-        assert bot.status == BotStatus.STOPPED
-        assert not bot._running
+        bot.start()
+        _wait_until(lambda: bot._running, msg='bot did not start')
+        bot.stop()
+        _wait_until(lambda: bot.status == BotStatus.STOPPED and not bot._running,
+                    msg='bot did not stop')
     
     def test_to_dict(self):
         """Test converting to dictionary."""

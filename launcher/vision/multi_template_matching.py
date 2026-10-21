@@ -586,7 +586,22 @@ class RobustOCR:
     @staticmethod
     def _tess_ocr(img: np.ndarray, config: str) -> str:
         try:
-            return pytesseract.image_to_string(img, config=config).strip()
+            if img is None:
+                return ""
+            arr = np.asarray(img)
+            if arr.size == 0:
+                return ""
+            if arr.dtype != np.uint8:
+                arr = np.clip(arr, 0, 255).astype(np.uint8)
+            if arr.ndim == 3:
+                if CV_AVAILABLE:
+                    arr = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+                else:
+                    arr = arr[:, :, 0]
+            elif arr.ndim != 2:
+                return ""
+            arr = np.ascontiguousarray(arr)
+            return pytesseract.image_to_string(arr, config=config).strip()
         except Exception:
             return ""
 

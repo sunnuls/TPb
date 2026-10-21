@@ -1,0 +1,6 @@
+# ws-scrcpy listen on 8090 so it does not collide with HIVE CONTROL :8000
+runGoogTracker: true
+runApplTracker: false
+server:
+  - secure: false
+    port: 8090

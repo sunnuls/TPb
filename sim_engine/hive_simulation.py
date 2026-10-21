@@ -205,7 +205,10 @@ class HiveSimulation:
         
         # Create HIVE group with first 3 available agents
         hive_agents = available_agents[:3]
-        self.hive_group = HiveGroup(agents=hive_agents)
+        self.hive_group = HiveGroup(
+            group_id=f"hive_{best_table.table_id}",
+            agents=hive_agents,
+        )
         
         # Coordinate join
         success = self.hive_group.coordinate_join(best_table)

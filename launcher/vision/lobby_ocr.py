@@ -48,6 +48,31 @@ except (ImportError, ModuleNotFoundError):
 
 logger = logging.getLogger(__name__)
 
+
+def _prepare_tesseract_image(image: np.ndarray) -> Optional[np.ndarray]:
+    """Validate and normalize an array before handing it to pytesseract.
+
+    Returns a contiguous uint8 grayscale image, or None if unsafe.
+    """
+    if image is None:
+        return None
+    try:
+        arr = np.asarray(image)
+    except Exception:
+        return None
+    if arr.size == 0 or arr.ndim < 2:
+        return None
+    if arr.dtype != np.uint8:
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+    if arr.ndim == 3:
+        if not CV_AVAILABLE:
+            arr = arr[:, :, 0]
+        else:
+            arr = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+    elif arr.ndim != 2:
+        return None
+    return np.ascontiguousarray(arr)
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -285,8 +310,14 @@ class LobbyOCR:
 
         h, w = image.shape[:2]
         header = image[0 : max(1, h // 6), :]
-        gray = cv2.cvtColor(header, cv2.COLOR_BGR2GRAY)
-        text = pytesseract.image_to_string(gray, config="--psm 6 --oem 3").lower()
+        gray = _prepare_tesseract_image(header)
+        if gray is None:
+            return LobbyLayout.GENERIC
+        try:
+            text = pytesseract.image_to_string(gray, config="--psm 6 --oem 3").lower()
+        except Exception as exc:
+            logger.debug("detect_layout tesseract error: %s", exc)
+            return LobbyLayout.GENERIC
 
         if "pokerstars" in text or "ps " in text:
             return LobbyLayout.POKERSTARS
@@ -501,12 +532,18 @@ class LobbyOCR:
         if not TESSERACT_AVAILABLE:
             return "", 0.0
 
+        prepared = _prepare_tesseract_image(gray_img)
+        if prepared is None:
+            return "", 0.0
+
         config = TESS_CONFIGS.get(ocr_type, TESS_CONFIGS["text"])
         try:
             data = pytesseract.image_to_data(
-                gray_img, config=config, output_type=pytesseract.Output.DICT
+                prepared, config=config, output_type=pytesseract.Output.DICT
             )
         except Exception as exc:
+            # Catches pytesseract.TesseractError and soft failures.
+            # Native segfaults are not catchable here — callers must isolate.
             logger.debug("Tesseract error: %s", exc)
             return "", 0.0
 
@@ -533,7 +570,7 @@ class LobbyOCR:
             if fb_config:
                 try:
                     fb_data = pytesseract.image_to_data(
-                        gray_img, config=fb_config, output_type=pytesseract.Output.DICT
+                        prepared, config=fb_config, output_type=pytesseract.Output.DICT
                     )
                     fb_texts = []
                     fb_confs = []

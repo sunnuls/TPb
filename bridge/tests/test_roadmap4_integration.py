@@ -55,32 +55,24 @@ class TestPhase1Integration:
 
 
 class TestPhase2Integration:
-    """Test Phase 2: Vision enhancement + multi-room support."""
-    
+    """Test Phase 2: Vision enhancement (room YAML ROIs removed)."""
+
     def test_training_data_collector(self, tmp_path):
         """Test training data collector initialization."""
         collector = TrainingDataCollector(
             dataset_dir=str(tmp_path),
             room="pokerstars"
         )
-        
+
         assert collector.room == "pokerstars"
         assert (tmp_path / "screenshots").exists()
         assert (tmp_path / "annotations").exists()
-    
-    @pytest.mark.parametrize("room_name", [
-        "pokerstars",
-        "ignition",
-        "ggpoker",
-        "888poker",
-        "partypoker"
-    ])
-    def test_room_configs_exist(self, room_name):
-        """Test all room configs exist."""
+
+    def test_room_configs_removed(self):
+        """config/rooms deleted — YOLO backend does not use per-room YAML ROIs."""
         from pathlib import Path
-        
-        config_path = Path("config/rooms") / f"{room_name}.yaml"
-        assert config_path.exists(), f"Missing config for {room_name}"
+
+        assert not (Path("config/rooms")).exists()
 
 
 class TestPhase3Integration:

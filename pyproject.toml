@@ -1,7 +1,7 @@
 [project]
-name = "ai-poker-blackjack-coach"
-version = "0.1.0"
-description = "Production-ready scaffold for an AI Poker + Blackjack Coach (deterministic engine + no-hallucination explanations)."
+name = "hive-poker-bot"
+version = "2.0.0"
+description = "Multi-agent poker bot network with YOLO vision and collusion coordination"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -18,19 +18,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-telegram = [
-  "python-telegram-bot>=21.4",
-]
 live = [
   "opencv-python",
   "pytesseract",
   "mss",
   "keyboard",
-  "pyqt5",
+  "pyqt6",
   "ultralytics>=8.0.0",
-]
-live_fallback = [
-  "pyautogui",
+  "easyocr",
 ]
 dev = [
   "pytest>=8.2.0",
@@ -48,7 +43,7 @@ simulation = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["coach_app/tests", "tools/tests"]
+testpaths = ["launcher/tests", "bridge", "sim_engine", "hive", "tests"]
 addopts = "-q"
 
 [tool.ruff]
@@ -59,11 +54,9 @@ ignore = ["E501"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["coach_app*"]
+include = ["launcher*", "bridge*", "sim_engine*", "hive*"]
 exclude = ["templates*"]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
-
-

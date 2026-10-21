@@ -309,17 +309,8 @@ class YOLORegionDetector:
     # ------------------------------------------------------------------
 
     def _cv_detect(self, image: np.ndarray) -> Dict[str, Tuple[int, int, int, int]]:
-        """Use AutoROIFinder as fallback."""
-        if self._cv_finder is None:
-            from launcher.vision.auto_roi_finder import AutoROIFinder
-            self._cv_finder = AutoROIFinder(use_ocr=False)
-
-        try:
-            result = self._cv_finder.find_rois(image)
-            return result.zones
-        except Exception as e:
-            logger.error("CV fallback failed: %s", e)
-            return {}
+        """CV fallback removed (AutoROIFinder deleted) — empty zones."""
+        return {}
 
     # ------------------------------------------------------------------
     # Zone mapping

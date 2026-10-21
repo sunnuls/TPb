@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 import numpy as np
+import pytest
 
 try:
     import cv2
@@ -149,6 +150,7 @@ def _make_synthetic_table(
 # ---------------------------------------------------------------------------
 
 @unittest.skipUnless(YOLO_MODULE_AVAILABLE, "yolo_region_detector not available")
+@pytest.mark.integration
 class TestYOLORegionDetector(unittest.TestCase):
     """Test the detection pipeline (CV fallback mode)."""
 
@@ -268,6 +270,7 @@ class TestIoUAndAccuracy(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 @unittest.skipUnless(YOLO_MODULE_AVAILABLE, "yolo_region_detector not available")
+@pytest.mark.integration
 class TestAccuracyThreshold(unittest.TestCase):
     """
     Core accuracy tests: run detection on 50 synthetic tables and verify

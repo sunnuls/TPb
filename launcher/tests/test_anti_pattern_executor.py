@@ -23,6 +23,8 @@ import statistics
 import unittest
 from typing import List
 
+import pytest
+
 try:
     from launcher.vision.anti_pattern_executor import (
         AntiPatternExecutor,
@@ -195,6 +197,7 @@ class TestPatternDetectorGood(unittest.TestCase):
 
 
 @unittest.skipUnless(MODULE_AVAILABLE, "Requires anti_pattern_executor")
+@pytest.mark.integration
 class TestSelfTest100(unittest.TestCase):
     """
     Core requirement from action_executor.md Phase 3:

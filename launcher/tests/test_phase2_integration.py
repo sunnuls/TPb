@@ -12,12 +12,21 @@ Tests:
 """
 
 import pytest
-import asyncio
+import time
 
 from launcher.bot_instance import BotInstance, BotStatus
 from launcher.bot_manager import BotManager
 from launcher.models.account import Account, WindowInfo, WindowType
 from launcher.models.roi_config import ROIConfig, ROIZone
+
+
+def _wait_until(pred, timeout=5.0, interval=0.1, msg="condition not met"):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return
+        time.sleep(interval)
+    assert pred(), msg
 
 
 def create_ready_account(nickname: str) -> Account:
@@ -73,8 +82,7 @@ class TestPhase2Integration:
         assert bot.account.is_ready_to_run()
         assert roi.has_required_zones()
     
-    @pytest.mark.asyncio
-    async def test_bot_lifecycle(self):
+    def test_bot_lifecycle(self):
         """Test bot start/stop lifecycle."""
         account = create_ready_account("LifecycleBot")
         roi = create_full_roi(account.account_id)
@@ -85,18 +93,19 @@ class TestPhase2Integration:
         assert not bot.is_active()
         
         # Start
-        await bot.start()
-        await asyncio.sleep(0.1)
-        
-        assert bot.status in [BotStatus.STARTING, BotStatus.SEARCHING]
-        assert bot.is_active()
+        bot.start()
+        _wait_until(
+            lambda: bot.status in [BotStatus.STARTING, BotStatus.SEARCHING] and bot.is_active(),
+            msg="bot did not start",
+        )
         assert bot.start_time is not None
         
         # Stop
-        await bot.stop()
-        
-        assert bot.status == BotStatus.STOPPED
-        assert not bot.is_active()
+        bot.stop()
+        _wait_until(
+            lambda: bot.status == BotStatus.STOPPED and not bot.is_active(),
+            msg="bot did not stop",
+        )
         assert bot.stats.uptime_seconds > 0
     
     def test_bot_manager_pool_operations(self):
@@ -121,8 +130,7 @@ class TestPhase2Integration:
             assert bot is not None
             assert bot.account == account
     
-    @pytest.mark.asyncio
-    async def test_start_stop_workflow(self):
+    def test_start_stop_workflow(self):
         """Test complete start/stop workflow."""
         manager = BotManager()
         
@@ -133,26 +141,25 @@ class TestPhase2Integration:
             manager.create_bot(account, roi)
         
         # Start 3 bots
-        started = await manager.start_all(max_count=3)
+        started = manager.start_all(max_count=3)
         assert started == 3
         
-        await asyncio.sleep(0.2)
-        
-        # Verify
-        assert len(manager.get_active_bots()) == 3
+        _wait_until(
+            lambda: len(manager.get_active_bots()) == 3,
+            msg="expected 3 active bots",
+        )
         assert len(manager.get_idle_bots()) == 2
         
         # Stop all
-        stopped = await manager.stop_all()
+        stopped = manager.stop_all()
         assert stopped == 3
         
-        assert len(manager.get_active_bots()) == 0
-        # After stop, bots are in STOPPED state, not IDLE
-        # So idle_bots should be 2 (the ones that were never started)
-        assert len(manager.get_idle_bots()) == 2
+        _wait_until(lambda: len(manager.get_active_bots()) == 0, msg="bots still active")
+        # get_idle_bots() == can_start(): STOPPED bots are startable again, so
+        # 3 stopped + 2 never-started = 5 (not just the 2 IDLE leftovers).
+        assert len(manager.get_idle_bots()) == 5
     
-    @pytest.mark.asyncio
-    async def test_statistics_aggregation(self):
+    def test_statistics_aggregation(self):
         """Test statistics aggregation."""
         manager = BotManager()
         
@@ -176,8 +183,7 @@ class TestPhase2Integration:
         assert stats['total_profit'] == 750.0  # 50+100+150+200+250
         assert stats['bots_by_status'][BotStatus.IDLE.value] == 5
     
-    @pytest.mark.asyncio
-    async def test_emergency_stop_workflow(self):
+    def test_emergency_stop_workflow(self):
         """Test emergency stop workflow."""
         manager = BotManager()
         
@@ -187,17 +193,10 @@ class TestPhase2Integration:
             roi = create_full_roi(account.account_id)
             manager.create_bot(account, roi)
         
-        await manager.start_all()
-        await asyncio.sleep(0.2)
-        
-        # Verify all running
-        assert len(manager.get_active_bots()) == 5
-        
-        # Emergency stop
-        await manager.emergency_stop()
-        
-        # Verify all stopped
-        assert len(manager.get_active_bots()) == 0
+        manager.start_all()
+        _wait_until(lambda: len(manager.get_active_bots()) == 5, msg='expected 5 active')
+        manager.emergency_stop()
+        _wait_until(lambda: len(manager.get_active_bots()) == 0, msg='bots still active')
         
         # All bots should be stopped
         for bot in manager.get_all_bots():
@@ -251,8 +250,7 @@ class TestPhase2Integration:
         assert data['stats']['hands_played'] == 50
         assert data['stats']['net_profit'] == 100.0
     
-    @pytest.mark.asyncio
-    async def test_full_phase2_workflow(self):
+    def test_full_phase2_workflow(self):
         """Test complete Phase 2 workflow."""
         print("\n" + "=" * 60)
         print("Phase 2 Full Workflow Test")
@@ -278,8 +276,8 @@ class TestPhase2Integration:
         print(f"3. Created {len(manager.get_all_bots())} bots")
         
         # 4. Start 3 bots
-        started = await manager.start_all(max_count=3)
-        await asyncio.sleep(0.2)
+        started = manager.start_all(max_count=3)
+        _wait_until(lambda: len(manager.get_active_bots()) == 3, msg='expected 3 active')
         
         print(f"4. Started {started} bots")
         print(f"   Active: {len(manager.get_active_bots())}")
@@ -292,7 +290,7 @@ class TestPhase2Integration:
         print(f"   Active bots: {stats['active_bots']}")
         
         # 6. Stop all
-        stopped = await manager.stop_all()
+        stopped = manager.stop_all()
         print(f"6. Stopped {stopped} bots")
         
         # 7. Final stats

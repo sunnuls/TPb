@@ -1,8 +1,8 @@
 """
 Bot Instance - Launcher Application.
 
-roadmap13 Phase 4: auto_find_window → find_anchors (multi-scale) → calculate_all_roi.
-Periodic anchor refresh every 25 seconds, fallback to relative config ROI.
+Vision via YOLO VisionEngine (resolution-independent). Legacy template/ROI
+anchor pipeline removed.
 
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 """
@@ -68,22 +68,20 @@ except (ImportError, Exception):
     HAS_ADB_BACKEND = False
 
 try:
-    from bridge.vision.anchor_detector import (
-        find_anchors,
-        calculate_all_roi,
-        calculate_relative_roi,
-        detect_roi,
-        load_config as load_anchor_config,
-        AnchorMatch,
-        ROIZone as AnchorROIZone,
-    )
-    HAS_ANCHOR_DETECTOR = True
+    from bridge.vision.yolo_engine import VisionEngine, GameState, load_bots_vision_config
+    HAS_VISION_ENGINE = True
 except (ImportError, Exception):
-    HAS_ANCHOR_DETECTOR = False
+    HAS_VISION_ENGINE = False
+    VisionEngine = None  # type: ignore
+    GameState = None  # type: ignore
+    load_bots_vision_config = None  # type: ignore
+
+# Legacy flag kept for callers that still check it (always False)
+HAS_ANCHOR_DETECTOR = False
 
 logger = logging.getLogger(__name__)
 
-# Auto-ROI refresh interval (seconds) — roadmap13: 20-30s
+# Auto-ROI refresh interval (seconds) — kept for API compat; ROI path is no-op
 AUTO_ROI_REFRESH_INTERVAL = 25
 
 
@@ -166,7 +164,7 @@ class BotInstance:
     _binding: Optional[Any] = field(default=None, repr=False)
     _binder: Optional[Any] = field(default=None, repr=False)
 
-    # Auto-ROI detection (roadmap11 Phase 4)
+    # Auto-ROI (legacy fields kept for UI/API; detection is YOLO-based now)
     _auto_roi_zones: list = field(default_factory=list, repr=False)
     _auto_roi_anchors: list = field(default_factory=list, repr=False)
     _auto_roi_hwnd: Optional[int] = field(default=None, repr=False)
@@ -189,6 +187,7 @@ class BotInstance:
     _lobby_scanner: Optional[Any] = field(default=None, repr=False)
     _nav_manager: Optional[Any] = field(default=None, repr=False)
     _state_bridge: Optional[Any] = field(default=None, repr=False)
+    _vision_engine: Optional[Any] = field(default=None, repr=False)
     _decision_engine: Optional[Any] = field(default=None, repr=False)
     _action_executor: Optional[Any] = field(default=None, repr=False)
     _collusion_coordinator: Optional[Any] = field(default=None, repr=False)
@@ -389,7 +388,7 @@ class BotInstance:
             self._binding = result
         return result is not None and result.is_bound
 
-    # -- Auto-ROI detection (roadmap11 Phase 4) --------------------------------
+    # -- Vision / legacy ROI stubs ---------------------------------------------
 
     def auto_detect_roi(
         self,
@@ -398,74 +397,14 @@ class BotInstance:
         process_names: Optional[list] = None,
         force: bool = False,
     ) -> list:
-        """Auto-detect ROI zones via anchor template matching.
+        """Legacy API — ROI template matching removed. Returns empty list.
 
-        Pipeline:
-          1. ``auto_find_window()`` → find poker client HWND
-          2. Capture screenshot from the found window
-          3. ``find_anchors(image)`` → locate anchors via template matching
-          4. ``calculate_relative_roi(anchors)`` → derive ROI zones
-          5. If anchors not found → fallback to relative config percentages
-
-        Args:
-            keywords:      Title keywords (defaults to ScreenCapture.POKER_TITLE_KEYWORDS).
-            process_names: Process names (defaults to ScreenCapture.POKER_PROCESS_NAMES).
-            force:         Force refresh even if interval hasn't elapsed.
-
-        Returns:
-            List of ROIZone dicts (from anchor_detector).
+        Vision is handled by ``VisionEngine.get_game_state()`` per frame.
         """
-        if not HAS_ANCHOR_DETECTOR:
-            logger.warning("anchor_detector not available — cannot auto-detect ROI")
-            return self._auto_roi_zones
-
-        # Throttle: skip if refreshed recently (unless forced)
-        now = time.time()
-        if not force and (now - self._auto_roi_last_refresh) < AUTO_ROI_REFRESH_INTERVAL:
-            return self._auto_roi_zones
-
-        # Step 1: find the poker window
-        hwnd = self._auto_find_window_for_roi(keywords, process_names)
-        if hwnd is None:
-            logger.warning("auto_detect_roi: no window found — keeping previous zones")
-            return self._auto_roi_zones
-
-        # Step 2: capture screenshot
-        image = self._capture_window_image(hwnd)
-        if image is None:
-            logger.warning("auto_detect_roi: capture failed — keeping previous zones")
-            return self._auto_roi_zones
-
-        # Step 3+4: detect anchors → compute ROI
-        try:
-            cfg = load_anchor_config()
-        except Exception as exc:
-            logger.warning("auto_detect_roi: config load failed: %s", exc)
-            return self._fallback_relative_roi()
-
-        anchors, zones = detect_roi(image, config=cfg)
-
-        if not anchors:
-            logger.info("auto_detect_roi: no anchors found — using fallback")
-            zones_list = self._fallback_relative_roi()
-        else:
-            zones_list = [z.to_dict() if hasattr(z, "to_dict") else z for z in zones]
-            for a in anchors:
-                logger.info(
-                    "Anchor '%s' found at (%d, %d) conf=%.3f",
-                    a.name, a.x, a.y, a.confidence,
-                )
-            logger.info(
-                "auto_detect_roi: %d anchors, %d zones computed",
-                len(anchors), len(zones),
-            )
-
-        self._auto_roi_anchors = anchors
-        self._auto_roi_zones = zones_list
-        self._auto_roi_hwnd = hwnd
-        self._auto_roi_last_refresh = now
-
-        return zones_list
+        self._auto_roi_zones = []
+        self._auto_roi_anchors = []
+        self._auto_roi_last_refresh = time.time()
+        return self._auto_roi_zones
 
     # Sentinel HWND used when the bot targets a mobile emulator instead of
     # a Win32 window — there is no real HWND, but downstream code
@@ -550,47 +489,8 @@ class BotInstance:
         return None
 
     def _fallback_relative_roi(self) -> list:
-        """Fallback: compute ROI from config-based relative percentages.
-
-        Uses the ``relative`` coordinates in ``anchor_templates.yaml``
-        to place zones without actual template matching.
-        """
-        try:
-            cfg = load_anchor_config()
-        except Exception:
-            return []
-
-        fallback_zones = []
-        # Use a default 800x600 window if no window captured
-        w, h = 800, 600
-
-        for name, anchor_cfg in cfg.get("anchors", {}).items():
-            rel = anchor_cfg.get("relative", {})
-            roi_offsets = anchor_cfg.get("roi_offsets", {})
-
-            # Anchor center from relative coords
-            ax = int((rel.get("x_min", 0) + rel.get("x_max", 0)) / 2 * w)
-            ay = int((rel.get("y_min", 0) + rel.get("y_max", 0)) / 2 * h)
-
-            for roi_name, offsets in roi_offsets.items():
-                dx = offsets.get("dx", 0)
-                dy = offsets.get("dy", 0)
-                rw = offsets.get("w", 100)
-                rh = offsets.get("h", 50)
-
-                rx = max(0, min(ax + dx, w - rw))
-                ry = max(0, min(ay + dy, h - rh))
-
-                fallback_zones.append({
-                    "name": roi_name,
-                    "x": rx, "y": ry,
-                    "w": rw, "h": rh,
-                    "source": f"fallback_{name}",
-                    "confidence": 0.0,
-                })
-
-        logger.info("Fallback ROI: %d zones from config percentages", len(fallback_zones))
-        return fallback_zones
+        """Legacy fallback removed with anchor_templates.yaml."""
+        return []
 
     def get_auto_roi_zones(self) -> list:
         """Return current auto-detected ROI zones."""
@@ -609,15 +509,12 @@ class BotInstance:
                 for a in self._auto_roi_anchors
                 if hasattr(a, "name")
             ],
+            "vision_backend": "yolo",
         }
 
     async def _auto_roi_refresh_loop(self):
-        """Background task: refresh anchor detection every 30 seconds."""
+        """Background task stub — ROI refresh no longer needed."""
         while self._running:
-            try:
-                self.auto_detect_roi()
-            except Exception as exc:
-                logger.warning("auto_roi_refresh error: %s", exc)
             await asyncio.sleep(AUTO_ROI_REFRESH_INTERVAL)
 
     def start(self):
@@ -640,18 +537,7 @@ class BotInstance:
             except Exception:
                 pass
 
-        # Auto-detect ROI synchronously before spawning thread
-        if HAS_ANCHOR_DETECTOR:
-            try:
-                self.auto_detect_roi(force=True)
-                logger.info(
-                    "Bot %s auto-ROI: %d zones", self.bot_id[:8], len(self._auto_roi_zones)
-                )
-            except Exception as exc:
-                logger.warning("Auto-ROI failed at start: %s", exc)
-
-        # Register with global MouseGuard (shared across all bots)
-        if HAS_MOUSE_GUARD:
+        # Register with global MouseGuard (shared across all bots)        if HAS_MOUSE_GUARD:
             try:
                 guard = MouseGuard.get_global()
                 guard.register_pause_callback(self._on_mouse_pause)
@@ -870,14 +756,10 @@ class BotInstance:
                     elif self.status in (BotStatus.STOPPED, BotStatus.ERROR):
                         break
 
-                    # Periodic ROI refresh every ~25 s (replaces create_task approach)
+                    # Periodic tick (legacy ROI refresh removed — YOLO is per-frame)
                     _roi_refresh_counter += 1
-                    if _roi_refresh_counter >= 125 and HAS_ANCHOR_DETECTOR:
+                    if _roi_refresh_counter >= 125:
                         _roi_refresh_counter = 0
-                        try:
-                            self.auto_detect_roi()
-                        except Exception:
-                            pass
 
                 except asyncio.CancelledError:
                     raise   # propagate cancel upward
@@ -950,7 +832,7 @@ class BotInstance:
             except Exception as exc:
                 logger.debug("NavigationManager init failed: %s", exc)
 
-        # State bridge (Phase 4)
+        # State bridge (Phase 4) — kept for navigation/hwnd helpers
         if self._state_bridge is None:
             try:
                 from bridge.state_bridge import StateBridge
@@ -964,6 +846,20 @@ class BotInstance:
                 )
             except Exception as exc:
                 logger.debug("StateBridge init failed: %s", exc)
+
+        # YOLO vision engine (replaces card_extractor / anchor ROI path)
+        if self._vision_engine is None and HAS_VISION_ENGINE:
+            try:
+                cfg = load_bots_vision_config("config/bots.yaml")
+                self._vision_engine = VisionEngine.from_config(cfg)
+                logger.info(
+                    "Bot %s: VisionEngine ready (backend=%s)",
+                    self.bot_id[:8],
+                    getattr(self._vision_engine, "backend", "?"),
+                )
+            except Exception as exc:
+                logger.warning("VisionEngine init failed: %s", exc)
+                self._vision_engine = None
 
         # Decision engine (Phase 5) — only needed in LIVE mode
         if self._decision_engine is None and self._live_mode:
@@ -1698,12 +1594,25 @@ class BotInstance:
         return False
 
     def _get_live_state(self) -> Optional[Any]:
-        """Read table state from StateBridge."""
-        if self._state_bridge is None:
-            return None
+        """Read table state via VisionEngine (YOLO); empty GameState on stub."""
         try:
+            if self._vision_engine is None and HAS_VISION_ENGINE:
+                cfg = load_bots_vision_config("config/bots.yaml")
+                self._vision_engine = VisionEngine.from_config(cfg)
+
+            if self._vision_engine is not None:
+                hwnd = self._get_active_table_hwnd()
+                if hwnd is None:
+                    hwnd = self._auto_find_window_for_roi()
+                image = self._capture_window_image(hwnd) if hwnd is not None else None
+                if image is None and self._get_emulator_backend() is not None:
+                    image = self._capture_window_image(self._EMULATOR_HWND_SENTINEL)
+                return self._vision_engine.get_game_state(image)
+
+            # Soft fallback if VisionEngine unavailable
+            if self._state_bridge is None:
+                return None
             room = self._get_room_for_account()
-            # Use TABLE window HWND (PS or CP table), not lobby
             hwnd = self._get_active_table_hwnd()
             if hasattr(self._state_bridge, "get_live_table_state"):
                 return self._state_bridge.get_live_table_state(

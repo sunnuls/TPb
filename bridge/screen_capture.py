@@ -811,7 +811,9 @@ class ScreenCapture:
 
         # Strategy 3: visual logo search (template matching on screen)
         if hwnd is None and CV2_AVAILABLE and MSS_AVAILABLE:
-            hwnd, info = self._auto_find_via_logo()
+            logo_hit = self._auto_find_via_logo()
+            if isinstance(logo_hit, tuple) and len(logo_hit) == 2:
+                hwnd, info = logo_hit
 
         if hwnd is None:
             logger.warning("auto_find_window: no poker window found")

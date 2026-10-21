@@ -4,13 +4,23 @@ Tests for BotManager - Phase 2.
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 """
 
+import time
+
 import pytest
-import asyncio
 
 from launcher.bot_manager import BotManager
 from launcher.bot_instance import BotStatus
 from launcher.models.account import Account, WindowInfo, WindowType
 from launcher.models.roi_config import ROIConfig, ROIZone
+
+
+def _wait_until(pred, timeout=5.0, interval=0.1, msg="condition not met"):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return
+        time.sleep(interval)
+    assert pred(), msg
 
 
 def create_test_account(nickname: str) -> Account:
@@ -153,8 +163,7 @@ class TestBotManager:
         
         assert len(manager.get_idle_bots()) == 2
     
-    @pytest.mark.asyncio
-    async def test_start_bot(self):
+    def test_start_bot(self):
         """Test starting bot."""
         manager = BotManager()
         
@@ -164,19 +173,19 @@ class TestBotManager:
         bot = manager.create_bot(account, roi)
         
         # Start bot
-        success = await manager.start_bot(bot.bot_id)
+        success = manager.start_bot(bot.bot_id)
         assert success
         
-        # Wait for initialization
-        await asyncio.sleep(0.1)
-        
-        assert bot.status in [BotStatus.STARTING, BotStatus.SEARCHING]
+        _wait_until(
+            lambda: bot.status in [BotStatus.STARTING, BotStatus.SEARCHING],
+            msg="bot did not reach STARTING/SEARCHING",
+        )
         
         # Cleanup
-        await manager.stop_bot(bot.bot_id)
+        manager.stop_bot(bot.bot_id)
+        _wait_until(lambda: bot.status == BotStatus.STOPPED, msg="bot did not stop")
     
-    @pytest.mark.asyncio
-    async def test_start_all(self):
+    def test_start_all(self):
         """Test starting all bots."""
         manager = BotManager()
         
@@ -187,20 +196,19 @@ class TestBotManager:
             manager.create_bot(account, roi)
         
         # Start all
-        started = await manager.start_all()
+        started = manager.start_all()
         assert started == 3
         
-        # Wait for initialization
-        await asyncio.sleep(0.1)
-        
-        # Check active
-        assert len(manager.get_active_bots()) == 3
+        _wait_until(
+            lambda: len(manager.get_active_bots()) == 3,
+            msg="expected 3 active bots",
+        )
         
         # Cleanup
-        await manager.stop_all()
+        manager.stop_all()
+        _wait_until(lambda: len(manager.get_active_bots()) == 0, msg="bots still active")
     
-    @pytest.mark.asyncio
-    async def test_start_all_with_limit(self):
+    def test_start_all_with_limit(self):
         """Test starting limited number of bots."""
         manager = BotManager()
         
@@ -211,18 +219,19 @@ class TestBotManager:
             manager.create_bot(account, roi)
         
         # Start 3
-        started = await manager.start_all(max_count=3)
+        started = manager.start_all(max_count=3)
         assert started == 3
         
-        await asyncio.sleep(0.1)
-        
-        assert len(manager.get_active_bots()) == 3
+        _wait_until(
+            lambda: len(manager.get_active_bots()) == 3,
+            msg="expected 3 active bots",
+        )
         
         # Cleanup
-        await manager.stop_all()
+        manager.stop_all()
+        _wait_until(lambda: len(manager.get_active_bots()) == 0, msg="bots still active")
     
-    @pytest.mark.asyncio
-    async def test_stop_bot(self):
+    def test_stop_bot(self):
         """Test stopping bot."""
         manager = BotManager()
         
@@ -232,15 +241,17 @@ class TestBotManager:
         bot = manager.create_bot(account, roi)
         
         # Start and stop
-        await manager.start_bot(bot.bot_id)
-        await asyncio.sleep(0.1)
+        manager.start_bot(bot.bot_id)
+        _wait_until(
+            lambda: bot.status in [BotStatus.STARTING, BotStatus.SEARCHING],
+            msg="bot did not start",
+        )
         
-        success = await manager.stop_bot(bot.bot_id)
+        success = manager.stop_bot(bot.bot_id)
         assert success
-        assert bot.status == BotStatus.STOPPED
+        _wait_until(lambda: bot.status == BotStatus.STOPPED, msg="bot did not stop")
     
-    @pytest.mark.asyncio
-    async def test_stop_all(self):
+    def test_stop_all(self):
         """Test stopping all bots."""
         manager = BotManager()
         
@@ -250,17 +261,19 @@ class TestBotManager:
             roi = create_test_roi(account.account_id)
             manager.create_bot(account, roi)
         
-        await manager.start_all()
-        await asyncio.sleep(0.1)
+        manager.start_all()
+        _wait_until(
+            lambda: len(manager.get_active_bots()) == 3,
+            msg="expected 3 active bots",
+        )
         
         # Stop all
-        stopped = await manager.stop_all()
+        stopped = manager.stop_all()
         assert stopped == 3
         
-        assert len(manager.get_active_bots()) == 0
+        _wait_until(lambda: len(manager.get_active_bots()) == 0, msg="bots still active")
     
-    @pytest.mark.asyncio
-    async def test_emergency_stop(self):
+    def test_emergency_stop(self):
         """Test emergency stop."""
         manager = BotManager()
         
@@ -270,14 +283,17 @@ class TestBotManager:
             roi = create_test_roi(account.account_id)
             manager.create_bot(account, roi)
         
-        await manager.start_all()
-        await asyncio.sleep(0.1)
+        manager.start_all()
+        _wait_until(
+            lambda: len(manager.get_active_bots()) == 3,
+            msg="expected 3 active bots",
+        )
         
         # Emergency stop
-        await manager.emergency_stop()
+        manager.emergency_stop()
         
         # All should be stopped
-        assert len(manager.get_active_bots()) == 0
+        _wait_until(lambda: len(manager.get_active_bots()) == 0, msg="bots still active")
     
     def test_remove_bot(self):
         """Test removing bot."""

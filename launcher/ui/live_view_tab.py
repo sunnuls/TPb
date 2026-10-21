@@ -95,26 +95,8 @@ class _ROIRefreshWorker(QObject if PYQT_AVAILABLE else object):
         # only works in main thread — so we emit finished with empty data
         # and let the caller handle ROI refresh synchronously instead.
         try:
-            from bridge.vision.anchor_detector import (
-                detect_roi, load_config as load_anchor_config,
-            )
-            import numpy as np, cv2
-            # Use already-captured image passed via self._img if available
-            img = getattr(self, "_img", None)
-            if img is None:
-                self.error.emit("No pre-captured image provided")
-                return
-            if hasattr(img, "convert"):
-                img = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
-
-            cfg = load_anchor_config()
-            anchors, zones = detect_roi(img, config=cfg)
-            self.finished.emit(
-                [z.to_dict() if hasattr(z, "to_dict") else z for z in zones],
-                [{"name": a.name, "x": a.x, "y": a.y,
-                  "confidence": round(a.confidence, 3)}
-                 for a in anchors if hasattr(a, "name")],
-            )
+            # Anchor/ROI pipeline removed — YOLO VisionEngine has no zone list here.
+            self.finished.emit([], [])
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -814,19 +796,8 @@ if PYQT_AVAILABLE:
             self.add_event(f"Refreshing ROI for {account.nickname}…")
 
             try:
-                import numpy as np, cv2 as _cv2
-                from bridge.vision.anchor_detector import (
-                    detect_roi, load_config as _load_cfg,
-                )
-                if hasattr(img, "convert"):
-                    img = _cv2.cvtColor(np.array(img.convert("RGB")), _cv2.COLOR_RGB2BGR)
-                cfg = _load_cfg()
-                anchors_raw, zones_raw = detect_roi(img, config=cfg)
-                zones = [z.to_dict() if hasattr(z, "to_dict") else z for z in zones_raw]
-                anchors = [{"name": a.name, "x": a.x, "y": a.y,
-                            "confidence": round(a.confidence, 3)}
-                           for a in anchors_raw if hasattr(a, "name")]
-                self._on_roi_refresh_done(zones, anchors)
+                # Anchor/ROI pipeline removed — empty overlay under YOLO backend
+                self._on_roi_refresh_done([], [])
             except Exception as exc:
                 self._on_roi_refresh_error(str(exc))
             finally:

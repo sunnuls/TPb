@@ -48,12 +48,15 @@ class TestAutoFindWindowVisual(unittest.TestCase):
 
     @patch("bridge.screen_capture.CV2_AVAILABLE", True)
     @patch("bridge.screen_capture.MSS_AVAILABLE", True)
+    @patch("bridge.screen_capture.FINDER_AVAILABLE", True)
+    @patch("bridge.screen_capture.WIN32_AVAILABLE", True)
     def test_visual_not_called_when_title_succeeds(self):
         """If title strategy works, visual search is skipped."""
         sc = self._make_sc()
         title_result = (11111, WindowInfo(hwnd=11111, title="CoinPoker"))
 
         with patch.object(sc, "_auto_find_via_finder", return_value=title_result), \
+             patch.object(sc, "_auto_find_via_enum", return_value=(None, None)), \
              patch.object(sc, "_auto_find_via_logo") as mock_logo, \
              patch.object(sc, "_save_active_window"):
 

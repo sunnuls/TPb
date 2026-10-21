@@ -4,8 +4,11 @@ Tests for HumanizationSimulator (Roadmap3 Phase 5.3).
 EDUCATIONAL USE ONLY: For HCI research prototype.
 """
 
-import pytest
 import math
+import random
+
+import numpy as np
+import pytest
 
 from bridge.humanization_sim import (
     HumanizationSimulator,
@@ -126,16 +129,39 @@ class TestHumanizationSimulator:
         assert weak_timing.think_time >= strong_timing.think_time * 0.7
     
     def test_important_actions_take_longer(self):
-        """Test that important actions have longer think time."""
-        simulator = HumanizationSimulator()
-        
-        normal_timing = simulator.simulate_timing('raise', is_important=False)
-        
-        simulator2 = HumanizationSimulator()
-        important_timing = simulator2.simulate_timing('raise', is_important=True)
-        
-        # Important actions should take at least as long
-        assert important_timing.think_time >= normal_timing.think_time * 0.9
+        """Test that important actions have longer think time (statistical)."""
+        # Fixed seed → reproducible samples from humanization_sim.random
+        random.seed(1337)
+
+        n_samples = 100
+        # Expected mean gap ≈ 0.5 * base_think_time ≈ 0.75; keep a safe floor.
+        min_delta = 0.35
+        # Important think_time ~ Uniform(0.7,2.3)*1.5 → std roughly < 1.0
+        max_std = 1.2
+
+        important_actions = ("raise", "all_in")
+        not_important_actions = ("check", "fold")
+
+        important_times = []
+        for i in range(n_samples):
+            sim = HumanizationSimulator()
+            action = important_actions[i % len(important_actions)]
+            timing = sim.simulate_timing(action, hand_strength=0.5, is_important=True)
+            important_times.append(timing.think_time)
+
+        not_important_times = []
+        for i in range(n_samples):
+            sim = HumanizationSimulator()
+            action = not_important_actions[i % len(not_important_actions)]
+            timing = sim.simulate_timing(action, hand_strength=0.5, is_important=False)
+            not_important_times.append(timing.think_time)
+
+        mean_important = float(np.mean(important_times))
+        mean_not_important = float(np.mean(not_important_times))
+        std_important = float(np.std(important_times))
+
+        assert mean_important - mean_not_important > min_delta
+        assert std_important < max_std
     
     def test_fatigue_accumulates(self):
         """Test that fatigue level increases."""

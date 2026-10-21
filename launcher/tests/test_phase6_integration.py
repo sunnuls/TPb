@@ -11,11 +11,21 @@ Tests:
 """
 
 import pytest
+import time
 import asyncio
 import logging
 
+def _wait_until(pred, timeout=5.0, interval=0.1, msg='condition not met'):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return
+        time.sleep(interval)
+    assert pred(), msg
+
+
 from launcher.bot_manager import BotManager
-from launcher.models.account import Account
+from launcher.models.account import Account, WindowInfo, WindowType
 from launcher.models.roi_config import ROIConfig
 from launcher.log_handler import setup_launcher_logging, get_log_handler, LogLevel
 
@@ -47,8 +57,7 @@ class TestPhase6Integration:
         assert any("Bot initialized" in msg for msg in messages)
         assert any("Vision error" in msg for msg in messages)
     
-    @pytest.mark.asyncio
-    async def test_vision_error_tracking(self):
+    def test_vision_error_tracking(self):
         """Test vision error tracking and threshold."""
         manager = BotManager(max_vision_errors=3)
         
@@ -70,8 +79,7 @@ class TestPhase6Integration:
         # Check error count
         assert manager._consecutive_vision_errors[bot.bot_id] == 3
     
-    @pytest.mark.asyncio
-    async def test_vision_success_resets_counter(self):
+    def test_vision_success_resets_counter(self):
         """Test vision success resets error counter."""
         manager = BotManager(max_vision_errors=5)
         
@@ -88,8 +96,7 @@ class TestPhase6Integration:
         manager.record_vision_success(bot.bot_id)
         assert manager._consecutive_vision_errors[bot.bot_id] == 0
     
-    @pytest.mark.asyncio
-    async def test_auto_stop_error_bots(self):
+    def test_auto_stop_error_bots(self):
         """Test automatic stopping of bots with errors."""
         manager = BotManager(max_vision_errors=2)
         
@@ -104,15 +111,15 @@ class TestPhase6Integration:
         bot2 = manager.create_bot(account2, roi2)
         
         # Start bots
-        await manager.start_bot(bot1.bot_id)
-        await manager.start_bot(bot2.bot_id)
+        manager.start_bot(bot1.bot_id)
+        manager.start_bot(bot2.bot_id)
         
         # Simulate errors on bot1
         manager.record_vision_error(bot1.bot_id)
         manager.record_vision_error(bot1.bot_id)
         
         # Check and stop
-        stopped = await manager.check_and_stop_error_bots()
+        stopped = manager.check_and_stop_error_bots()
         
         assert stopped == 1  # Only bot1 should be stopped
         
@@ -123,13 +130,21 @@ class TestPhase6Integration:
         assert bot1_after.status.value != "playing"
         assert bot2_after.status == bot2.status
     
-    @pytest.mark.asyncio
-    async def test_emergency_stop_workflow(self):
+    def test_emergency_stop_workflow(self):
         """Test emergency stop workflow."""
         manager = BotManager()
         
         # Create multiple bots
-        accounts = [Account(nickname=f"Bot {i}") for i in range(5)]
+        accounts = []
+        for i in range(5):
+            acc = Account(nickname=f"Bot {i}", room="pokerstars")
+            acc.window_info = WindowInfo(
+                window_id=str(1000 + i),
+                window_title=f"PS - Bot {i}",
+                window_type=WindowType.DESKTOP_CLIENT,
+            )
+            acc.roi_configured = True
+            accounts.append(acc)
         rois = [ROIConfig(account_id=acc.account_id) for acc in accounts]
         bots = [manager.create_bot(acc, roi) for acc, roi in zip(accounts, rois)]
         
@@ -137,10 +152,10 @@ class TestPhase6Integration:
         assert len(manager.get_all_bots()) == 5
         
         # Try to start all (may not succeed in placeholder)
-        started = await manager.start_all()
+        started = manager.start_all()
         
         # Emergency stop (stops all, even if not started)
-        stopped = await manager.stop_all()
+        stopped = manager.stop_all()
         
         # Verify stop_all attempted to stop all bots
         # (stopped count may be 0 if bots never started)
@@ -205,8 +220,7 @@ class TestPhase6Integration:
         assert LogLevel.ERROR in levels
         assert LogLevel.CRITICAL in levels
     
-    @pytest.mark.asyncio
-    async def test_full_monitoring_workflow(self):
+    def test_full_monitoring_workflow(self):
         """Test complete monitoring workflow."""
         # Setup
         handler = setup_launcher_logging(use_qt=False)
@@ -225,8 +239,8 @@ class TestPhase6Integration:
         bot2 = manager.create_bot(account2, roi2)
         
         # Try to start bots (may not work in placeholder)
-        start1 = await manager.start_bot(bot1.bot_id)
-        start2 = await manager.start_bot(bot2.bot_id)
+        start1 = manager.start_bot(bot1.bot_id)
+        start2 = manager.start_bot(bot2.bot_id)
         
         # Simulate activity
         logger = logging.getLogger("monitoring_workflow")
@@ -251,7 +265,7 @@ class TestPhase6Integration:
         assert stats['actions_executed'] == 5
         
         # Auto-stop error bots
-        stopped = await manager.check_and_stop_error_bots()
+        stopped = manager.check_and_stop_error_bots()
         assert stopped == 1
         
         # Check logs captured workflow

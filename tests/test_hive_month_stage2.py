@@ -69,7 +69,7 @@ class TestExchangeHoleCards(unittest.TestCase):
         self.hub.environments[self.env] = {"agent_1", "agent_2", "agent_3"}
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_single_agent_share(self):
         result = self._run(
@@ -144,7 +144,7 @@ class TestGetSessionCards(unittest.TestCase):
         self.hub.environments[self.env] = {"a1", "a2"}
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_get_session_cards(self):
         self._run(self.hub.exchange_hole_cards(self.env, "a1", ["As", "Kh"]))

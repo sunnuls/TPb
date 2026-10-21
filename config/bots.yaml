@@ -1,0 +1,6 @@
+# HIVE bot runtime config
+vision:
+  backend: yolo          # yolo | stub
+  detect_weights: models/yolo/detect_best.pt
+  cls_weights: models/yolo/cls_best.pt
+  model_size: 640

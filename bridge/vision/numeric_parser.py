@@ -156,10 +156,18 @@ class NumericParser:
         try:
             import cv2
 
-            if len(region.shape) == 3:
-                gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+            arr = np.asarray(region)
+            if arr.size == 0:
+                return 0.0
+            if arr.dtype != np.uint8:
+                arr = np.clip(arr, 0, 255).astype(np.uint8)
+            if arr.ndim == 3:
+                gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+            elif arr.ndim == 2:
+                gray = arr
             else:
-                gray = region
+                return 0.0
+            gray = np.ascontiguousarray(gray)
             # Upscale tiny ROIs for better OCR
             h, w = gray.shape[:2]
             if h < 40 or w < 60:
@@ -167,10 +175,22 @@ class NumericParser:
                 gray = cv2.resize(
                     gray, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC
                 )
+                gray = np.ascontiguousarray(gray)
             _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            text = self._pytesseract.image_to_string(bw, config=_OCR_CFG).strip()
+            bw = np.ascontiguousarray(bw)
+            try:
+                text = self._pytesseract.image_to_string(bw, config=_OCR_CFG).strip()
+            except Exception as tess_exc:
+                logger.debug("OCR image_to_string(bw) failed: %s", tess_exc)
+                text = ""
             if not text:
-                text = self._pytesseract.image_to_string(gray, config=_OCR_CFG).strip()
+                try:
+                    text = self._pytesseract.image_to_string(
+                        gray, config=_OCR_CFG
+                    ).strip()
+                except Exception as tess_exc:
+                    logger.debug("OCR image_to_string(gray) failed: %s", tess_exc)
+                    text = ""
             return self._parse_numeric_text(text)
         except Exception as exc:
             logger.debug("OCR ROI failed: %s", exc)

@@ -1,4 +1,28 @@
 {
-  "accounts": [],
-  "count": 0
+  "accounts": [
+    {
+      "account_id": "db749063-e208-4010-95b7-b880b8616b3c",
+      "nickname": "PS_MuMu_1",
+      "status": "ready",
+      "window_info": {
+        "window_id": "emulator-5556",
+        "window_title": "PokerStars MuMu",
+        "window_type": "embedded",
+        "process_name": "MuMu",
+        "position": [
+          0,
+          0,
+          1080,
+          1920
+        ],
+        "emulator_serial": "emulator-5556"
+      },
+      "roi_configured": false,
+      "bot_running": false,
+      "room": "pokerstars",
+      "notes": "MuMu PokerStars mobile test (emulator-5556)",
+      "balance": 0.0
+    }
+  ],
+  "count": 1
 }

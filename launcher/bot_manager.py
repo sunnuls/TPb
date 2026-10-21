@@ -1,10 +1,7 @@
 """
 Bot Manager - Launcher Application.
 
-roadmap13 Phase 4:
-  - At bot start: auto_find_window → find_anchors → calculate_all_roi
-  - Periodic ROI refresh every 25s for all active bots
-  - Fallback if anchors not found
+YOLO vision facade via BotInstance.VisionEngine (no template anchors).
 
 ⚠️ EDUCATIONAL RESEARCH ONLY.
 """
@@ -19,14 +16,7 @@ from launcher.bot_instance import BotInstance, BotStatus, AUTO_ROI_REFRESH_INTER
 
 logger = logging.getLogger(__name__)
 
-try:
-    from bridge.vision.anchor_detector import (
-        detect_roi,
-        load_config as load_anchor_config,
-    )
-    HAS_ANCHOR_DETECTOR = True
-except (ImportError, Exception):
-    HAS_ANCHOR_DETECTOR = False
+HAS_ANCHOR_DETECTOR = False
 
 
 class BotManager:
@@ -387,6 +377,7 @@ class BotManager:
             'active_tables': active_tables,
             'hive_teams': hive_teams,
             'hands_played': total_hands,
+            'total_hands': total_hands,  # alias expected by dashboard/tests
             'total_profit': total_profit,
             'vision_errors': total_errors,
             'actions_executed': total_actions,

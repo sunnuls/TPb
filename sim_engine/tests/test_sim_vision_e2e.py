@@ -29,8 +29,7 @@ from sim_engine.sim_vision import (
     SimulationVisionExtractor,
     create_simulation_vision_from_config,
 )
-from coach_app.schemas.common import Street
-from coach_app.schemas.poker import Position
+from sim_engine.engine import Street, Position
 
 
 @pytest.fixture

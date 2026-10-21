@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from coach_app.schemas.common import Street
-from coach_app.schemas.poker import Position
+from sim_engine.engine import Street, Position
 from sim_engine.decision import (
     AgentContext,
     LineType,

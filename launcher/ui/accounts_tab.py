@@ -69,37 +69,8 @@ class _AutoROIWorker(QObject if PYQT_AVAILABLE else object):
     @pyqtSlot() if PYQT_AVAILABLE else (lambda f: f)
     def run(self) -> None:
         try:
-            from bridge.screen_capture import ScreenCapture
-            from bridge.vision.anchor_detector import (
-                detect_roi, load_config as load_anchor_config,
-            )
-            import numpy as np
-
-            sc  = ScreenCapture()
-            img = sc.capture(hwnd=self._hwnd)
-
-            if img is None:
-                self.error.emit("Capture returned None — is the window visible?")
-                return
-
-            # Normalise to numpy
-            if hasattr(img, "convert"):
-                import cv2
-                img = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
-
-            cfg     = load_anchor_config()
-            anchors, zones = detect_roi(img, config=cfg)
-
-            zone_dicts = [
-                (z.to_dict() if hasattr(z, "to_dict") else z)
-                for z in zones
-            ]
-            anchor_dicts = [
-                {"name": a.name, "x": a.x, "y": a.y,
-                 "confidence": round(a.confidence, 3)}
-                for a in anchors if hasattr(a, "name")
-            ]
-            self.finished.emit(zone_dicts, anchor_dicts)
+            # Anchor/ROI pipeline removed — YOLO VisionEngine replaces it.
+            self.finished.emit([], [])
 
         except Exception as exc:
             self.error.emit(str(exc))
@@ -827,16 +798,6 @@ if PYQT_AVAILABLE:
                     img = _cv2.cvtColor(np.array(img.convert("RGB")), _cv2.COLOR_RGB2BGR)
 
                 zones, anchors = [], []
-                try:
-                    from bridge.vision.anchor_detector import (
-                        detect_roi, load_config as _load_cfg)
-                    anchors_raw, zones_raw = detect_roi(img, config=_load_cfg())
-                    zones   = [z.to_dict() if hasattr(z, "to_dict") else z for z in zones_raw]
-                    anchors = [{"name": a.name, "x": a.x, "y": a.y,
-                                "confidence": round(a.confidence, 3)}
-                               for a in anchors_raw if hasattr(a, "name")]
-                except Exception as det_exc:
-                    logger.warning("anchor_detector unavailable: %s", det_exc)
 
                 if sender_btn:
                     sender_btn.setEnabled(True)
@@ -940,7 +901,7 @@ if PYQT_AVAILABLE:
                 "Auto-ROI Failed",
                 f"Auto-ROI detection failed:\n\n{msg}\n\n"
                 "Make sure:\n"
-                "• bridge/vision/anchor_detector is installed\n"
+                "• bridge/vision/yolo_engine is installed\n"
                 "• numpy and opencv are available\n"
                 "• Window is visible and not minimized",
             )

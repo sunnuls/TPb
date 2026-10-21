@@ -1064,16 +1064,19 @@ class LobbyScanner:
                    "0.10/0.25", "0.25/0.50", "0.50/1.00", "1.00/2.00"]
         
         tables = []
-        for i in range(min(num_tables, len(_names))):
+        for i in range(num_tables):
+            idx = i % len(_names)
             max_seats      = rng.choice([4, 6, 9])
             players_seated = rng.randint(1, max_seats - 1)
             human_count    = rng.randint(1, min(3, players_seated))
-            avg_pot        = float(_stakes[i].split("/")[1]) * rng.uniform(3, 12)
+            avg_pot        = float(_stakes[idx].split("/")[1]) * rng.uniform(3, 12)
+            # Suffix name when cycling past the template list so IDs stay unique
+            name = _names[idx] if i < len(_names) else f"{_names[idx]} #{i+1}"
             tables.append(LobbyTable(
                 table_id       = f"sim_{i+1:03d}",
-                table_name     = _names[i],
-                game_type      = _types[i],
-                stakes         = _stakes[i],
+                table_name     = name,
+                game_type      = _types[idx],
+                stakes         = _stakes[idx],
                 players_seated = players_seated,
                 max_seats      = max_seats,
                 human_count    = human_count,

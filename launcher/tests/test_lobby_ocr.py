@@ -15,10 +15,13 @@ Tests cover:
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import unittest
 from typing import List, Tuple
 
 import numpy as np
+import pytest
 
 try:
     import cv2
@@ -414,6 +417,7 @@ class TestLayoutSpecs(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @unittest.skipUnless(MODULE_AVAILABLE and CV_AVAILABLE, "Requires lobby_ocr + OpenCV")
 class TestEndToEnd(unittest.TestCase):
     """End-to-end pipeline tests on synthetic lobby images."""
@@ -495,6 +499,7 @@ class TestEndToEnd(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @unittest.skipUnless(MODULE_AVAILABLE and CV_AVAILABLE, "Requires lobby_ocr + OpenCV")
 class TestToLobbyTables(unittest.TestCase):
     """Test conversion from OCR results to LobbyTable dicts."""
@@ -536,6 +541,7 @@ class TestToLobbyTables(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @unittest.skipUnless(MODULE_AVAILABLE and CV_AVAILABLE, "Requires lobby_ocr + OpenCV")
 class TestDebugImage(unittest.TestCase):
     """Test debug visualisation."""
@@ -565,6 +571,7 @@ class TestDebugImage(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @unittest.skipUnless(MODULE_AVAILABLE and CV_AVAILABLE, "Requires lobby_ocr + OpenCV")
 class TestLayoutDetection(unittest.TestCase):
     """Test auto layout detection."""
@@ -593,6 +600,7 @@ class TestLayoutDetection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @unittest.skipUnless(MODULE_AVAILABLE and CV_AVAILABLE, "Requires lobby_ocr + OpenCV")
 class TestAccuracy(unittest.TestCase):
     """
@@ -700,6 +708,48 @@ class TestAccuracy(unittest.TestCase):
                 result.processing_time_ms, 120_000,
                 f"Lobby {i} took {result.processing_time_ms:.0f}ms"
             )
+
+
+# ---------------------------------------------------------------------------
+# Unit: OCR sanity via subprocess (isolates native tesseract crashes)
+# ---------------------------------------------------------------------------
+
+
+@unittest.skipUnless(MODULE_AVAILABLE and CV_AVAILABLE, "Requires lobby_ocr + OpenCV")
+class TestOCRSubprocessSanity(unittest.TestCase):
+    """One real OCR call in a child process so a segfault cannot kill pytest."""
+
+    def test_tesseract_ocr_in_subprocess(self):
+        snippet = r"""
+import sys
+import numpy as np
+from launcher.vision.lobby_ocr import LobbyOCR, _prepare_tesseract_image
+img = np.full((80, 200, 3), 220, dtype=np.uint8)
+# Draw a simple digit-like blob so OCR has content
+img[20:60, 40:80] = 30
+ocr = LobbyOCR(use_easyocr=False)
+prepared = _prepare_tesseract_image(img)
+assert prepared is not None and prepared.size > 0
+text, conf = ocr._tesseract_ocr(prepared, "text")
+# Soft assertion: call returned without raising; text may be empty
+assert isinstance(text, str)
+assert isinstance(conf, float)
+print("OCR_OK", len(text), round(conf, 3))
+"""
+        proc = subprocess.run(
+            [sys.executable, "-c", snippet],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(__import__("pathlib").Path(__file__).resolve().parents[2]),
+        )
+        self.assertEqual(
+            proc.returncode,
+            0,
+            f"subprocess OCR failed rc={proc.returncode}\n"
+            f"stdout={proc.stdout}\nstderr={proc.stderr}",
+        )
+        self.assertIn("OCR_OK", proc.stdout)
 
 
 # ---------------------------------------------------------------------------

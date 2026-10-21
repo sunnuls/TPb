@@ -500,47 +500,34 @@ def generate_synthetic_lobby(width: int = 1200, height: int = 700) -> Image.Imag
 
 
 def test_lobby_ocr(screenshot_path: str | None = None):
-    """Test lobby OCR — scan an actual or synthetic lobby screenshot.
-
-    Phase 1 of lobby_scanner.md: recognise players/seats in the lobby.
-    """
-    from live_capture import LobbyCaptureScanner, LobbyScanResult
+    """Lobby OCR via launcher.lobby_scanner (replaces deleted live_capture)."""
+    # TODO: ERA - live_capture removed; use LobbyScanner against a real HWND
+    try:
+        from launcher.lobby_scanner import LobbyScanner, LobbyTable
+    except ImportError:
+        print("ERROR: launcher.lobby_scanner not available")
+        return
 
     print("=" * 60)
-    print("  LOBBY OCR TEST")
+    print("  LOBBY OCR TEST (launcher.lobby_scanner)")
     print("=" * 60)
 
+    scanner = LobbyScanner()
     if screenshot_path and Path(screenshot_path).exists():
-        print(f"\n  Screenshot: {screenshot_path}")
-        image = Image.open(screenshot_path)
+        print(f"\n  Screenshot path given ({screenshot_path}) — "
+              "LobbyScanner needs a live HWND; falling back to simulation.")
+        snapshot = scanner.simulate_lobby_data(num_tables=8)
     else:
-        print("\n  Using synthetic lobby image")
-        image = generate_synthetic_lobby()
-        image.save("lobby_synthetic_test.png")
-        print("  Saved: lobby_synthetic_test.png")
+        print("\n  No HWND/screenshot — using simulated lobby tables")
+        snapshot = scanner.simulate_lobby_data(num_tables=8)
 
-    scanner = LobbyCaptureScanner()
-    result: LobbyScanResult = scanner.scan_image(image)
-
-    print(f"\n  Rows detected: {result.total_rows_detected}")
-    print(f"  Tables parsed: {result.table_count}")
-    print(f"  OCR confidence: {result.ocr_confidence:.0%}")
-    print(f"  Elapsed: {result.elapsed_ms:.0f} ms")
-
-    if result.error:
-        print(f"\n  ERROR: {result.error}")
-
-    if result.tables:
+    print(f"\n  Tables: {snapshot.total_tables}")
+    if snapshot.tables:
         print(f"\n  {'Table':20s} {'Stakes':14s} {'Seats':8s} {'Game'}")
         print("  " + "-" * 55)
-        for t in result.tables:
-            seats = f"{t.players}/{t.max_players}" if t.max_players else str(t.players)
-            print(f"  {t.name:20s} {t.stakes:14s} {seats:8s} {t.game_type}")
-    else:
-        print("\n  No tables found")
-
-    avail = result.available_tables(min_seats=1)
-    print(f"\n  Available tables (>= 1 seat free): {len(avail)}")
+        for t in snapshot.tables:
+            seats = f"{t.players_seated}/{t.max_seats}"
+            print(f"  {t.table_name:20s} {t.stakes:14s} {seats:8s} {t.game_type}")
 
     print("\n" + "=" * 60)
     print("  TEST COMPLETE")

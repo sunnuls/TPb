@@ -21,7 +21,6 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 
 from bridge.screen_capture import ScreenCapture
-from bridge.roi_manager import ROIManager
 from bridge.vision.card_extractor import CardExtractor
 from bridge.vision.numeric_parser import NumericParser
 from bridge.vision.metadata import MetadataExtractor
@@ -30,13 +29,29 @@ from sim_engine.state.table_state import TableState, PlayerState, Position, Stre
 logger = logging.getLogger(__name__)
 
 
+class _NullROIManager:
+    """Stub after ROIManager removal — preserves attribute API for callers/tests."""
+
+    def load_roi_set(self, *args, **kwargs) -> bool:
+        return False
+
+    def get_all_rois(self) -> dict:
+        return {}
+
+    def list_available_rooms(self) -> list:
+        return []
+
+    def get_statistics(self) -> dict:
+        return {}
+
+
 class StateBridge:
     """
     State Bridge - Orchestrates all vision extractors.
     
     Main workflow:
     1. Capture screenshot (from ScreenCapture)
-    2. Load ROIs (from ROIManager)
+    2. Load ROIs (stub / empty after ROIManager removal)
     3. Extract cards (CardExtractor)
     4. Extract numeric data (NumericParser)
     5. Extract metadata (MetadataExtractor)
@@ -84,7 +99,7 @@ class StateBridge:
             screenshot_dir=screen_config.get('screenshot_dir', 'bridge/debug_screenshots')
         )
         
-        self.roi_manager = ROIManager()
+        self.roi_manager = _NullROIManager()
         
         # Live mode: never invent pot/stacks/cards — fail closed instead
         _fb = bool(dry_run)
@@ -324,28 +339,8 @@ class StateBridge:
             return None
 
     def _load_rois_from_yaml(self, room: str) -> Dict[str, Tuple[int, int, int, int]]:
-        """Load ROI definitions from config/rooms/<room>.yaml."""
-        try:
-            import yaml, os
-            yaml_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "config", "rooms", f"{room}.yaml"
-            )
-            if not os.path.exists(yaml_path):
-                return {}
-            with open(yaml_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-            rois_raw = data.get("rois", {})
-            result: Dict[str, Tuple[int, int, int, int]] = {}
-            for name, vals in rois_raw.items():
-                result[name] = (
-                    vals.get("x", 0), vals.get("y", 0),
-                    vals.get("width", 50), vals.get("height", 30),
-                )
-            return result
-        except Exception as exc:
-            logger.debug("_load_rois_from_yaml(%s) error: %s", room, exc)
-            return {}
+        """Legacy ROI YAML loader — config/rooms removed; always empty."""
+        return {}
 
     def _capture_screenshot(
         self,

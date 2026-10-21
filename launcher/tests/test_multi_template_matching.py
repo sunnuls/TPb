@@ -16,6 +16,7 @@ import unittest
 from typing import Tuple
 
 import numpy as np
+import pytest
 
 try:
     import cv2
@@ -282,6 +283,7 @@ class TestRobustOCR(unittest.TestCase):
 # Tests: CardRecognizer (end-to-end)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.integration
 @unittest.skipUnless(CV_AVAILABLE, "OpenCV not installed")
 class TestCardRecognizer(unittest.TestCase):
 
@@ -339,6 +341,7 @@ class TestCardRecognizer(unittest.TestCase):
 # Tests: NumericRecognizer
 # ---------------------------------------------------------------------------
 
+@pytest.mark.integration
 @unittest.skipUnless(CV_AVAILABLE, "OpenCV not installed")
 class TestNumericRecognizer(unittest.TestCase):
 
@@ -368,6 +371,7 @@ class TestNumericRecognizer(unittest.TestCase):
 # Tests: Edge cases
 # ---------------------------------------------------------------------------
 
+@pytest.mark.integration
 @unittest.skipUnless(CV_AVAILABLE, "OpenCV not installed")
 class TestEdgeCases(unittest.TestCase):
 

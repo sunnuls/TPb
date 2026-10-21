@@ -30,8 +30,7 @@ from sim_engine.variance_module import (
     OpponentProfiler,
     SessionState,
 )
-from coach_app.schemas.common import Street
-from coach_app.schemas.poker import Position
+from sim_engine.engine import Street, Position
 
 
 class TestDecisionVarianceIntegration:
@@ -286,12 +285,13 @@ class TestProfilingAccuracy:
     def test_profiling_with_known_conservative_behavior(self):
         """Test profiling accurately identifies conservative behavior."""
         profiler = OpponentProfiler()
+        rng = random.Random(42)
         
         # Generate conservative observation pattern
         observations = []
         for _ in range(50):
             # 70% fold, 25% call, 5% raise
-            action = random.choices(
+            action = rng.choices(
                 ["fold", "call", "raise"],
                 weights=[0.70, 0.25, 0.05]
             )[0]

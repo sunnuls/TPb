@@ -49,6 +49,11 @@ class HiveAgent:
     hands_played: int = 0
     coordination_events: int = 0
     join_timestamp: Optional[float] = None
+
+    @property
+    def current_environment(self) -> Optional[str]:
+        """Alias used by hive_simulation — same as environment_id."""
+        return self.environment_id
     
     def join_environment(self, environment_id: str, table: VirtualTable) -> bool:
         """

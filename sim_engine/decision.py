@@ -15,14 +15,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from coach_app.engine import (
+from sim_engine.engine import (
     Range,
     calculate_monte_carlo_equity,
-    recommend_postflop,
-    recommend_preflop,
+    Street,
+    Position,
 )
-from coach_app.schemas.common import Street
-from coach_app.schemas.poker import PokerActionType, Position
 
 
 class SimulatedActionType(Enum):

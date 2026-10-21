@@ -117,12 +117,21 @@ class EmulatorInstance:
         )
 
 
-# Vendor console executables used for launch/stop (best-effort; only used
-# if the corresponding emulator is actually installed at the given path).
-_VENDOR_CONSOLES = {
-    "ldplayer": r"C:\LDPlayer\LDPlayer9\ldconsole.exe",
-    "mumu": r"C:\Program Files\Netease\MuMuPlayer-12.0\shell\MuMuManager.exe",
+# Vendor console executable candidates (used only when auto_discover_consoles=True
+# or HIVE_<VENDOR>_CONSOLE env is set). Empty registry by default so launch
+# without an explicit console path returns False.
+_VENDOR_CONSOLE_CANDIDATES = {
+    "ldplayer": [
+        r"C:\LDPlayer\LDPlayer9\ldconsole.exe",
+        r"C:\LDPlayer\LDPlayer4.0\ldconsole.exe",
+    ],
+    "mumu": [
+        r"C:\Program Files\Netease\MuMuPlayer-12.0\shell\MuMuManager.exe",
+        r"C:\Program Files\Netease\MuMu\nx_main\MuMuManager.exe",
+    ],
 }
+# Back-compat alias — no longer used as an auto-trusted registry.
+_VENDOR_CONSOLES = {k: v[0] for k, v in _VENDOR_CONSOLE_CANDIDATES.items()}
 
 
 class EmulatorManager:
@@ -138,11 +147,15 @@ class EmulatorManager:
         self,
         bindings_file: Path = DEFAULT_BINDINGS_FILE,
         adb_path: str = "adb",
+        *,
+        auto_discover_consoles: bool = False,
     ) -> None:
         self.bindings_file = Path(bindings_file)
         self.adb_path = adb_path
         self.instances: Dict[str, EmulatorInstance] = {}  # bot_id -> instance
         self._backends: Dict[str, "ADBBackend"] = {}       # bot_id -> cached backend
+        self.auto_discover_consoles = auto_discover_consoles
+        self._consoles: Dict[str, str] = {}
 
         self._load()
         logger.info("EmulatorManager initialized (%d bound instances)", len(self.instances))
@@ -267,16 +280,41 @@ class EmulatorManager:
 
     # ── Vendor console launch/stop (best-effort) ────────────────────────
 
+    def register_console(self, vendor: str, path: str) -> None:
+        """Explicitly register a vendor console executable path."""
+        self._consoles[vendor] = path
+
+    def _resolve_console(self, vendor: str) -> Optional[str]:
+        """Return console path for vendor, or None if not configured/found."""
+        import os
+
+        if vendor in self._consoles and Path(self._consoles[vendor]).is_file():
+            return self._consoles[vendor]
+
+        env_key = f"HIVE_{vendor.upper()}_CONSOLE"
+        env_path = os.environ.get(env_key)
+        if env_path and Path(env_path).is_file():
+            self._consoles[vendor] = env_path
+            return env_path
+
+        if not self.auto_discover_consoles:
+            return None
+
+        for candidate in _VENDOR_CONSOLE_CANDIDATES.get(vendor, []):
+            if Path(candidate).is_file():
+                self._consoles[vendor] = candidate
+                return candidate
+        return None
+
     def launch_instance(self, vendor: str, instance_index: int, timeout: float = 60.0) -> bool:
         """Launch an emulator instance via its vendor's console tool.
 
-        Only LDPlayer and MuMu are wired up (the two most common tools
-        for running many Android instances on one Windows host). Returns
-        False if the vendor console isn't found — the instance can still
-        be started manually and then bound via `bind()`.
+        Returns False if no console is registered/configured for the vendor.
+        Call ``register_console`` or set ``auto_discover_consoles=True`` /
+        ``HIVE_<VENDOR>_CONSOLE`` to enable launch.
         """
-        console = _VENDOR_CONSOLES.get(vendor)
-        if not console or not Path(console).exists():
+        console = self._resolve_console(vendor)
+        if not console:
             logger.warning("launch_instance: no console tool found for vendor '%s'", vendor)
             return False
 
@@ -295,8 +333,8 @@ class EmulatorManager:
 
     def stop_instance(self, vendor: str, instance_index: int, timeout: float = 30.0) -> bool:
         """Stop an emulator instance via its vendor's console tool."""
-        console = _VENDOR_CONSOLES.get(vendor)
-        if not console or not Path(console).exists():
+        console = self._resolve_console(vendor)
+        if not console:
             logger.warning("stop_instance: no console tool found for vendor '%s'", vendor)
             return False
 

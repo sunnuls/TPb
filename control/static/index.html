@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>HIVE CONTROL</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2332;
+    --border: #2a3a4f;
+    --text: #e7ecf3;
+    --muted: #8b9bb4;
+    --ok: #2ecc71;
+    --bad: #e74c3c;
+    --warn: #f1c40f;
+    --accent: #3d8bfd;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.1rem;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .health {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 6px;
+  }
+  .dot.ok { background: var(--ok); }
+  .dot.fail { background: var(--bad); }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  #banner {
+    display: none;
+    background: #3a3208;
+    color: var(--warn);
+    padding: 10px 20px;
+    border-bottom: 1px solid #5a4a10;
+    font-size: 0.9rem;
+  }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 20px;
+  }
+  .tile {
+    position: relative;
+    background: var(--panel);
+    border: 2px solid var(--bad);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .stale-badge {
+    display: none;
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    background: rgba(15, 20, 25, 0.85);
+    color: var(--warn);
+    font-size: 0.72rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+  }
+  .stale-badge.show { display: inline-block; }
+  .dot.asleep { background: var(--warn); }
+  .awake-dot { margin: 0 4px 0 2px; }
+  .tile.online { border-color: var(--ok); }
+  .tile:hover { transform: translateY(-2px); }
+  .tile img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 9/16;
+    object-fit: contain;
+    background: #000;
+  }
+  .tile iframe {
+    display: block;
+    border: none;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 9/16;
+    background: #000;
+    pointer-events: none;
+  }
+  .tile iframe:fullscreen,
+  .tile:fullscreen iframe {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    pointer-events: auto;
+  }
+  .tile .meta {
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .tile .meta strong { color: var(--text); display: block; font-size: 0.85rem; }
+  #empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--muted);
+    padding: 60px 20px;
+  }
+  /* Modal */
+  #modal, #ws-modal, #opt-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #modal.open, #ws-modal.open, #opt-modal.open { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 960px;
+    width: 100%;
+    max-height: 95vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-body {
+    display: flex;
+    gap: 16px;
+    padding: 16px;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  #big-screen-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #big-screen {
+    max-width: 100%;
+    max-height: 75vh;
+    cursor: crosshair;
+    display: block;
+  }
+  .keys {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 120px;
+  }
+  .keys button { width: 100%; }
+  .debug-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-left: auto;
+    user-select: none;
+  }
+  .debug-overlay {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    background: rgba(15, 20, 25, 0.88);
+    color: #9ecbff;
+    font-size: 0.68rem;
+    line-height: 1.35;
+    padding: 4px 6px;
+    border-radius: 4px;
+    pointer-events: none;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  body.debug-on .debug-overlay { display: block; }
+  .btn-live {
+    position: absolute;
+    bottom: 52px;
+    left: 8px;
+    z-index: 4;
+    font-size: 0.75rem;
+    padding: 5px 9px;
+  }
+  .btn-full {
+    position: absolute;
+    bottom: 52px;
+    left: 88px;
+    z-index: 4;
+    font-size: 0.72rem;
+    padding: 5px 9px;
+  }
+  .btn-scrcpy60 {
+    position: absolute;
+    bottom: 28px;
+    left: 88px;
+    z-index: 4;
+    font-size: 0.68rem;
+    padding: 4px 8px;
+  }
+  .btn-opt {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 4;
+    font-size: 0.68rem;
+    padding: 5px 8px;
+    background: #3a4a62;
+  }
+  .btn-live.no-scrcpy,
+  .btn-scrcpy60.no-scrcpy,
+  .btn-full.offline { opacity: 0.55; cursor: not-allowed; }
+  #opt-report {
+    white-space: pre-wrap;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--muted);
+    margin: 0;
+    max-height: 55vh;
+    overflow: auto;
+  }
+  #opt-status { font-size: 0.8rem; color: var(--warn); min-height: 1.2em; }
+  #ws-modal iframe {
+    width: 100%;
+    height: 75vh;
+    border: 0;
+    background: #000;
+  }
+  .modal-box.wide { max-width: 1100px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>HIVE CONTROL</h1>
+  <div class="health" id="health">
+    <span><span class="dot fail" id="adb-dot"></span>ADB <span id="adb-label">…</span></span>
+    <span>Devices: <strong id="dev-count">0</strong></span>
+  </div>
+  <button type="button" id="btn-refresh">Refresh</button>
+  <label class="debug-toggle"><input type="checkbox" id="chk-debug"/> debug</label>
+</header>
+<div id="banner">ADB не найден, установи platform-tools</div>
+<div id="grid"><div id="empty">Нет устройств. Подключи эмулятор или телефон.</div></div>
+
+<div id="modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <strong id="modal-title">Device</strong>
+      <button type="button" class="ghost" id="btn-close">Закрыть</button>
+    </div>
+    <div class="modal-body">
+      <div id="big-screen-wrap">
+        <span id="modal-stale" class="stale-badge">⏸ кадр удержан</span>
+        <span id="modal-debug" class="debug-overlay">fps — · age — ms</span>
+        <img id="big-screen" alt="screen" draggable="false"/>
+      </div>
+      <div class="keys">
+        <button type="button" data-key="4">Назад (4)</button>
+        <button type="button" data-key="3">Домой (3)</button>
+        <button type="button" data-key="187">Недавние (187)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="opt-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <strong id="opt-modal-title">Оптимизация стрима</strong>
+      <button type="button" class="ghost" id="opt-btn-close">Закрыть</button>
+    </div>
+    <div class="modal-body" style="flex-direction:column">
+      <pre id="opt-report">Загрузка диагностики…</pre>
+      <div id="opt-status"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" id="opt-btn-apply">Применить настройки</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="ws-modal">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <strong id="ws-modal-title">Полный контроль</strong>
+      <button type="button" class="ghost" id="ws-btn-close">Закрыть</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <iframe id="ws-frame" title="ws-scrcpy" allow="autoplay; clipboard-read; clipboard-write"></iframe>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const grid = document.getElementById("grid");
+  const banner = document.getElementById("banner");
+  const adbDot = document.getElementById("adb-dot");
+  const adbLabel = document.getElementById("adb-label");
+  const devCount = document.getElementById("dev-count");
+  const modal = document.getElementById("modal");
+  const bigScreen = document.getElementById("big-screen");
+  const modalTitle = document.getElementById("modal-title");
+  const modalDebug = document.getElementById("modal-debug");
+  const chkDebug = document.getElementById("chk-debug");
+  const optModal = document.getElementById("opt-modal");
+  const optReport = document.getElementById("opt-report");
+  const optStatus = document.getElementById("opt-status");
+  const optModalTitle = document.getElementById("opt-modal-title");
+  let optSerial = "";
+  const wsModal = document.getElementById("ws-modal");
+  const wsFrame = document.getElementById("ws-frame");
+  const wsModalTitle = document.getElementById("ws-modal-title");
+  const WS_HINT = "Запусти ws-scrcpy: python scripts/start_stack.py";
+  const SCRCPY_HINT = "Установи: winget install Genymobile.scrcpy";
+
+  let devices = [];
+  let selected = null;
+  let pollTimer = null;
+  let statsTimer = null;
+  let builtSerialKey = "";
+  let scrcpyAvailable = false;
+  let wsScrcpyAvailable = false;
+  let wsScrcpyBase = "http://127.0.0.1:8090";
+  const tiles = new Map();
+  let devicesInFlight = false;
+
+  function parseRes(res) {
+    if (!res || typeof res !== "string") return null;
+    const m = res.match(/(\d+)\s*x\s*(\d+)/i);
+    if (!m) return null;
+    return { w: parseInt(m[1], 10), h: parseInt(m[2], 10) };
+  }
+
+  function serialKey(list) {
+    return list.map((d) => d.serial).slice().sort().join("\n");
+  }
+
+  function fetchJson(url) {
+    return fetch(url, { cache: "no-store", credentials: "omit" });
+  }
+
+  function streamUrl(serial) {
+    return "/api/devices/" + encodeURIComponent(serial) + "/stream";
+  }
+
+  function fallbackWsUrl(serial) {
+    const base = (wsScrcpyBase || "http://127.0.0.1:8090").replace(/\/$/, "");
+    const wsInner = new URL(base.replace(/^http/i, "ws") + "/");
+    wsInner.searchParams.set("action", "proxy-adb");
+    wsInner.searchParams.set("remote", "tcp:8886");
+    wsInner.searchParams.set("udid", serial);
+    const hash = new URLSearchParams();
+    hash.set("action", "stream");
+    hash.set("udid", serial);
+    hash.set("player", "webcodecs");
+    hash.set("ws", wsInner.toString());
+    hash.set("fitToScreen", "true");
+    return base + "/#!" + hash.toString();
+  }
+
+  function bindStream(img, serial) {
+    if (!img || !serial) return;
+    const base = streamUrl(serial);
+    img.src = base;
+    img.onerror = function () {
+      setTimeout(function () {
+        img.src = base + "?retry=" + Date.now();
+      }, 2000);
+    };
+  }
+
+  function unbindMjpeg(img) {
+    if (!img) return;
+    img.onerror = null;
+    img.removeAttribute("src");
+  }
+
+  function bindPreview(rec, d) {
+    if (!rec || !d) return;
+    const useWs = wsScrcpyAvailable && d.status === "online";
+    if (useWs) {
+      if (rec.img) rec.img.dataset.bound = "";
+      unbindMjpeg(rec.img);
+      if (rec.img) rec.img.style.display = "none";
+      if (rec.iframe) {
+        rec.iframe.style.display = "block";
+        if (rec.iframe.dataset.bound !== d.serial) {
+          rec.iframe.dataset.bound = d.serial;
+          fetchJson("/api/devices/" + encodeURIComponent(d.serial) + "/ws_scrcpy_url")
+            .then((r) => r.json())
+            .then((data) => {
+              rec.iframe.src = (data && data.url) ? data.url : fallbackWsUrl(d.serial);
+            })
+            .catch(() => {
+              rec.iframe.src = fallbackWsUrl(d.serial);
+            });
+        }
+      }
+      return;
+    }
+    if (rec.iframe) {
+      rec.iframe.style.display = "none";
+      if (rec.iframe.dataset.bound) {
+        rec.iframe.src = "about:blank";
+        rec.iframe.dataset.bound = "";
+      }
+    }
+    if (rec.img) {
+      rec.img.style.display = "block";
+      if (d.status === "online") {
+        if (rec.img.dataset.bound !== d.serial) {
+          rec.img.dataset.bound = d.serial;
+          bindStream(rec.img, d.serial);
+        }
+      } else {
+        rec.img.dataset.bound = "";
+        unbindMjpeg(rec.img);
+      }
+    }
+  }
+
+  function requestPreviewFullscreen(rec) {
+    const iframe = rec.iframe;
+    const useIframe = iframe && iframe.style.display !== "none" &&
+      iframe.src && iframe.src !== "about:blank";
+    const el = useIframe ? iframe : rec.el;
+    try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else if (el.requestFullscreen) {
+        el.requestFullscreen();
+      } else if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function formatDebug(st) {
+    const fps = st && typeof st.fps === "number" ? st.fps.toFixed(1) : "—";
+    const age = st && st.last_age_ms != null ? st.last_age_ms : "—";
+    return "fps " + fps + " · age " + age + " ms";
+  }
+
+  async function refreshWsHealth() {
+    try {
+      const r = await fetchJson("/api/ws_scrcpy_health");
+      const h = await r.json();
+      wsScrcpyAvailable = !!h.available;
+      if (h.url) wsScrcpyBase = String(h.url).replace(/\/$/, "");
+    } catch (e) {
+      wsScrcpyAvailable = false;
+    }
+    tiles.forEach((rec, serial) => {
+      applyFullButton(rec);
+      const d = devices.find((x) => x.serial === serial);
+      if (d) bindPreview(rec, d);
+    });
+  }
+
+  async function refreshHealth() {
+    try {
+      const r = await fetchJson("/api/health");
+      const h = await r.json();
+      scrcpyAvailable = !!h.scrcpy_available;
+      adbDot.className = "dot " + (h.adb_available ? "ok" : "fail");
+      adbLabel.textContent = h.adb_available ? "ok" : "fail";
+      devCount.textContent = String(h.devices_online || 0);
+      banner.style.display = h.adb_available ? "none" : "block";
+      tiles.forEach((rec) => {
+        applyLiveButton(rec);
+        applyFullButton(rec);
+        applyScrcpy60Button(rec);
+      });
+    } catch (e) {
+      adbDot.className = "dot fail";
+      adbLabel.textContent = "fail";
+    }
+  }
+
+  async function refreshDevices() {
+    if (devicesInFlight) return;
+    devicesInFlight = true;
+    try {
+      const r = await fetchJson("/api/devices");
+      devices = await r.json();
+    } catch (e) {
+      devices = [];
+    } finally {
+      devicesInFlight = false;
+    }
+    syncGrid();
+  }
+
+  async function refreshStreamStats() {
+    if (!chkDebug.checked) return;
+    const serials = new Set();
+    devices.forEach((d) => {
+      if (d.status === "online") serials.add(d.serial);
+    });
+    if (selected) serials.add(selected.serial);
+    for (const serial of serials) {
+      try {
+        const r = await fetchJson(
+          "/api/devices/" + encodeURIComponent(serial) + "/stream_stats"
+        );
+        const st = await r.json();
+        const rec = tiles.get(serial);
+        if (rec && rec.debug) rec.debug.textContent = formatDebug(st);
+        if (selected && selected.serial === serial) {
+          modalDebug.textContent = formatDebug(st);
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  function awakeDotHtml(d) {
+    const cls = d.awake ? "ok" : "asleep";
+    const title = d.awake ? "Awake" : "Asleep";
+    return "<span class='dot awake-dot " + cls + "' title='" + title + "'></span>";
+  }
+
+  function applyFullButton(rec) {
+    if (!rec.full) return;
+    rec.full.disabled = !wsScrcpyAvailable;
+    rec.full.classList.toggle("offline", !wsScrcpyAvailable);
+    rec.full.title = wsScrcpyAvailable ? "ws-scrcpy полный контроль" : WS_HINT;
+  }
+
+  function applyLiveButton(rec) {
+    if (!rec.live) return;
+    rec.live.classList.toggle("no-scrcpy", !scrcpyAvailable);
+    rec.live.title = scrcpyAvailable ? "Открыть scrcpy" : SCRCPY_HINT;
+  }
+
+  function applyScrcpy60Button(rec) {
+    if (!rec.scrcpy60) return;
+    rec.scrcpy60.classList.toggle("no-scrcpy", !scrcpyAvailable);
+    rec.scrcpy60.title = scrcpyAvailable
+      ? "scrcpy 1080 / 60fps / 8Mbps / без звука"
+      : SCRCPY_HINT;
+  }
+
+  function updateTileChrome(rec, d) {
+    rec.el.className = "tile " + (d.status === "online" ? "online" : "");
+    rec.meta.innerHTML =
+      "<strong>" + escapeHtml(d.model || d.serial) + "</strong>" +
+      escapeHtml(d.resolution || "?") + " · " + awakeDotHtml(d) +
+      escapeHtml(d.status || "?") +
+      "<br/><span style='font-size:0.7rem'>" + escapeHtml(d.serial) + "</span>";
+    rec.el.onclick = () => requestPreviewFullscreen(rec);
+    applyLiveButton(rec);
+    applyFullButton(rec);
+    applyScrcpy60Button(rec);
+    bindPreview(rec, d);
+    if (rec.opt) rec.opt.title = "Диагностика и scrcpy --max-size=1080 --max-fps=60 --bit-rate=8M --no-audio";
+  }
+
+  function createTile(d) {
+    const tile = document.createElement("div");
+    const badge = document.createElement("span");
+    badge.className = "stale-badge";
+    badge.textContent = "⏸ кадр удержан";
+    const debug = document.createElement("span");
+    debug.className = "debug-overlay";
+    debug.textContent = formatDebug(null);
+    const img = document.createElement("img");
+    img.alt = d.serial;
+    img.draggable = false;
+    img.style.display = "none";
+    const iframe = document.createElement("iframe");
+    iframe.title = "ws-scrcpy " + d.serial;
+    iframe.setAttribute("allow", "autoplay; fullscreen; clipboard-read; clipboard-write");
+    iframe.setAttribute("allowfullscreen", "true");
+    iframe.style.display = "none";
+    const live = document.createElement("button");
+    live.type = "button";
+    live.className = "btn-live";
+    live.textContent = "⚡ LIVE";
+    live.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      startLive(d.serial);
+    });
+    const full = document.createElement("button");
+    full.type = "button";
+    full.className = "btn-full";
+    full.textContent = "🎮 Полный контроль";
+    full.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openWsModal(d);
+    });
+    const scrcpy60 = document.createElement("button");
+    scrcpy60.type = "button";
+    scrcpy60.className = "btn-scrcpy60";
+    scrcpy60.textContent = "🎮 scrcpy 60fps";
+    scrcpy60.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      startScrcpy60(d.serial);
+    });
+    const opt = document.createElement("button");
+    opt.type = "button";
+    opt.className = "btn-opt";
+    opt.textContent = "⚙️ Оптимизировать стрим";
+    opt.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openOptModal(d);
+    });
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    tile.appendChild(badge);
+    tile.appendChild(debug);
+    tile.appendChild(img);
+    tile.appendChild(iframe);
+    tile.appendChild(live);
+    tile.appendChild(full);
+    tile.appendChild(scrcpy60);
+    tile.appendChild(opt);
+    tile.appendChild(meta);
+    return {
+      el: tile, img: img, iframe: iframe, badge: badge, meta: meta, debug: debug,
+      live: live, full: full, scrcpy60: scrcpy60, opt: opt
+    };
+  }
+
+  async function startLive(serial) {
+    if (!scrcpyAvailable) return;
+    try {
+      await fetch(
+        "/api/devices/" + encodeURIComponent(serial) + "/live",
+        { method: "POST", cache: "no-store", credentials: "omit" }
+      );
+    } catch (e) { /* ignore */ }
+  }
+
+  async function startScrcpy60(serial) {
+    if (!scrcpyAvailable) return;
+    try {
+      await fetch(
+        "/api/devices/" + encodeURIComponent(serial) + "/scrcpy",
+        { method: "POST", cache: "no-store", credentials: "omit" }
+      );
+    } catch (e) { /* ignore */ }
+  }
+
+  function showEmpty() {
+    tiles.forEach((rec) => rec.el.remove());
+    tiles.clear();
+    builtSerialKey = "";
+    grid.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.id = "empty";
+    empty.textContent = "Нет устройств. Подключи эмулятор или телефон.";
+    grid.appendChild(empty);
+  }
+
+  function rebuildTiles() {
+    tiles.forEach((rec) => rec.el.remove());
+    tiles.clear();
+    grid.innerHTML = "";
+    devices.forEach((d) => {
+      const rec = createTile(d);
+      tiles.set(d.serial, rec);
+      grid.appendChild(rec.el);
+      updateTileChrome(rec, d);
+    });
+    builtSerialKey = serialKey(devices);
+  }
+
+  function syncGrid() {
+    if (!devices.length) {
+      showEmpty();
+      return;
+    }
+    const key = serialKey(devices);
+    if (key !== builtSerialKey) {
+      rebuildTiles();
+    } else {
+      devices.forEach((d) => {
+        const rec = tiles.get(d.serial);
+        if (rec) updateTileChrome(rec, d);
+      });
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function openModal(d) {
+    selected = d;
+    modalTitle.textContent = (d.model || d.serial) + " · " + (d.resolution || "");
+    if (bigScreen.dataset.serial !== d.serial) {
+      bindStream(bigScreen, d.serial);
+      bigScreen.dataset.serial = d.serial;
+    }
+    modal.classList.add("open");
+  }
+
+  function openWsModal(d) {
+    if (!wsScrcpyAvailable) return;
+    wsModalTitle.textContent = "Полный контроль · " + (d.model || d.serial);
+    const wsInner = new URL(wsScrcpyBase.replace(/^http/i, "ws") + "/");
+    wsInner.searchParams.set("action", "proxy-adb");
+    wsInner.searchParams.set("remote", "tcp:8886");
+    wsInner.searchParams.set("udid", d.serial);
+    const hash = new URLSearchParams();
+    hash.set("action", "stream");
+    hash.set("udid", d.serial);
+    hash.set("player", "webcodecs");
+    hash.set("ws", wsInner.toString());
+    hash.set("fitToScreen", "true");
+    wsFrame.src = wsScrcpyBase + "/#!" + hash.toString();
+    wsModal.classList.add("open");
+  }
+
+  function closeWsModal() {
+    wsModal.classList.remove("open");
+    wsFrame.src = "about:blank";
+  }
+
+  async function openOptModal(d) {
+    optSerial = d.serial || "";
+    optModalTitle.textContent = "Оптимизация стрима · " + (d.model || d.serial);
+    optReport.textContent = "Загрузка диагностики…";
+    optStatus.textContent = "";
+    optModal.classList.add("open");
+    try {
+      const r = await fetchJson(
+        "/api/stream_optimize?serial=" + encodeURIComponent(optSerial)
+      );
+      const data = await r.json();
+      const fps = data.hive_mjpeg_fps != null ? data.hive_mjpeg_fps : "—";
+      optReport.textContent =
+        (data.report || JSON.stringify(data, null, 2)) +
+        "\nHIVE MJPEG fps (плитка): " + fps + "\n";
+    } catch (e) {
+      optReport.textContent = "Ошибка диагностики: " + e;
+    }
+  }
+
+  function closeOptModal() {
+    optModal.classList.remove("open");
+  }
+
+  function closeModal() {
+    modal.classList.remove("open");
+    selected = null;
+  }
+
+  bigScreen.addEventListener("click", async (ev) => {
+    if (!selected) return;
+    const nat = parseRes(selected.resolution);
+    if (!nat) return;
+    const rect = bigScreen.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    const rx = (ev.clientX - rect.left) / rect.width;
+    const ry = (ev.clientY - rect.top) / rect.height;
+    const x = Math.round(rx * nat.w);
+    const y = Math.round(ry * nat.h);
+    try {
+      await fetch(
+        "/api/devices/" + encodeURIComponent(selected.serial) +
+        "/tap?x=" + x + "&y=" + y,
+        { method: "POST", cache: "no-store", credentials: "omit" }
+      );
+    } catch (e) { /* ignore */ }
+  });
+
+  document.querySelectorAll(".keys button[data-key]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!selected) return;
+      const key = btn.getAttribute("data-key");
+      try {
+        await fetch(
+          "/api/devices/" + encodeURIComponent(selected.serial) +
+          "/key?key=" + encodeURIComponent(key),
+          { method: "POST", cache: "no-store", credentials: "omit" }
+        );
+      } catch (e) { /* ignore */ }
+    });
+  });
+
+  document.getElementById("btn-close").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+  document.getElementById("ws-btn-close").addEventListener("click", closeWsModal);
+  wsModal.addEventListener("click", (e) => {
+    if (e.target === wsModal) closeWsModal();
+  });
+  document.getElementById("opt-btn-close").addEventListener("click", closeOptModal);
+  optModal.addEventListener("click", (e) => {
+    if (e.target === optModal) closeOptModal();
+  });
+  document.getElementById("opt-btn-apply").addEventListener("click", async () => {
+    optStatus.textContent = "Запуск scrcpy…";
+    try {
+      const r = await fetch(
+        "/api/stream_optimize/apply?serial=" + encodeURIComponent(optSerial),
+        { method: "POST", cache: "no-store", credentials: "omit" }
+      );
+      const data = await r.json();
+      if (data.ok) {
+        optStatus.textContent =
+          "Применено: " + (data.flags || []).join(" ") + " pid=" + data.pid;
+      } else {
+        optStatus.textContent = (data.hint || data.reason || "не удалось").toString();
+      }
+    } catch (e) {
+      optStatus.textContent = String(e);
+    }
+  });
+  document.getElementById("btn-refresh").addEventListener("click", () => {
+    tick();
+  });
+  chkDebug.addEventListener("change", () => {
+    document.body.classList.toggle("debug-on", chkDebug.checked);
+    if (chkDebug.checked) refreshStreamStats();
+  });
+
+  async function tick() {
+    await refreshHealth();
+    await refreshWsHealth();
+    await refreshDevices();
+  }
+  tick();
+  pollTimer = setInterval(tick, 5000);
+  statsTimer = setInterval(refreshStreamStats, 1000);
+})();
+</script>
+</body>
+</html>

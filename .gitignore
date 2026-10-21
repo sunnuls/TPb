@@ -50,10 +50,17 @@ env/
 
 # ML models & training data (download locally, do not commit)
 weights/
+models/
 *.pt
+*.zip
+dataset/
+runs/
 Playing Cards*/
 Playing-Cards-Detection-master/
 online_poker_training/
+
+# Vendored scrcpy checkout (installed locally)
+third_party/
 
 # Debug & runtime artifacts
 bridge/debug_screenshots/
@@ -68,7 +75,15 @@ test_model_result.jpg
 config/active_window.json
 config/session_history.json
 config/emulator_bindings.json
+config/scrcpy_sessions.json
 config_demo_temp/
+opencode.json
+smoke_*.png
+_*.txt
+_*.json
+tools_launcher_out.txt
+test_report.md
+test_full_report.md
 
 # Database
 *.db

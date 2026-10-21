@@ -19,7 +19,7 @@ import numpy as np
 
 from bridge.safety import SafetyConfig, SafetyFramework, SafetyMode, get_safety
 from bridge.screen_capture import ScreenCapture
-from bridge.roi_manager import ROIManager
+from bridge.state_bridge import _NullROIManager as ROIManager
 
 # Setup logging
 logging.basicConfig(

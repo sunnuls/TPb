@@ -90,16 +90,23 @@ class TestLoadBinding(unittest.TestCase):
         self.assertEqual(b.nickname, "")
 
     def test_load_binding_with_auto_bind(self):
-        """load_binding + auto_bind triggers finder."""
+        """load_binding + auto_bind triggers finder when hwnd is unknown.
+
+        bind_from_account only calls auto_bind when the binding is not yet
+        bound (hwnd==0). Account without captured hwnd exercises that path.
+        """
         mock_finder = MagicMock()
         mock_finder.available = True
         mock_finder.find.return_value = None
         self.binder._finder = mock_finder
 
-        bot = BotInstance(account=self._make_account("hero"))
+        # No window_info → hwnd stays 0 → auto_bind → finder.find(nickname)
+        acc = Account(nickname="hero", room="pokerstars")
+        acc.window_info = None
+        bot = BotInstance(account=acc)
         bot.load_binding(self.binder, auto_bind=True)
-        # finder.find should have been called
         mock_finder.find.assert_called()
+        mock_finder.find.assert_called_with("hero")
 
 
 @unittest.skipUnless(MODULE_AVAILABLE, "Required modules not importable")
